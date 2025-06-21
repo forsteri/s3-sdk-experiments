@@ -1,0 +1,40 @@
+{
+  "aws": {
+    "region": "ap-northeast-1",
+    "profile": "sandbox01"
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(levelname)s - %(message)s"
+  },
+  "upload_tasks": [
+    {
+      "name": "sample_data",
+      "description": "サンプルデータの定期アップロード",
+      "source": "../test-data/sample_data.csv",
+      "bucket": "s3-experiment-bucket-250615",
+      "s3_key": "daily-uploads/sample_data.csv",
+      "enabled": true
+    },
+    {
+      "name": "data_directory",
+      "description": "データディレクトリ全体のアップロード",
+      "source": "../test-data/exports/",
+      "bucket": "s3-experiment-bucket-250615-small-files",
+      "s3_key_prefix": "exports/",
+      "recursive": true,
+      "enabled": true
+    }
+  ],
+  "options": {
+    "dry_run": false,
+    "max_retries": 3,
+    "timeout_seconds": 300,
+    "exclude_patterns": [
+      "*.tmp",
+      "*.lock",
+      "__pycache__",
+      ".DS_Store"
+    ]
+  }
+}
