@@ -29,13 +29,14 @@ def assume_role(aws_config):
 
     try:
         region = aws_config.get('region')
+        endpoint_url = f"https://sts.{region}.amazonaws.com"
         profile = aws_config.get('profile')
-    
+
         if profile:
             session = boto3.Session(profile_name=profile)
-            sts_client = session.client('sts', region_name=region)
+            sts_client = session.client('sts', region_name=region, endpoint_url=endpoint_url)
         else:
-            sts_client = boto3.client('sts', region_name=region)
+            sts_client = boto3.client('sts', region_name=region, endpoint_url=endpoint_url)
 
         # Assume Roleを実行
         role_arn = assume_role_config['role_arn']
@@ -54,6 +55,7 @@ def assume_role(aws_config):
 
         response = sts_client.assume_role(**assume_role_params)
         credentials = response['Credentials']
+        print(f"Assumed role successfully: {role_arn}")
         return {
             'access_key_id': credentials['AccessKeyId'],
             'secret_access_key': credentials['SecretAccessKey'],
@@ -74,7 +76,6 @@ def create_s3_client(aws_config):
         profile = aws_config.get('profile')
 
         temp_credentials = assume_role(aws_config)
-
         if temp_credentials:
             s3_client = boto3.client(
                 's3',
@@ -83,12 +84,14 @@ def create_s3_client(aws_config):
                 aws_secret_access_key=temp_credentials['secret_access_key'],
                 aws_session_token=temp_credentials['session_token']
             )
+            print("S3 client created with assumed role credentials.")
         else:
             if profile:
                 session = boto3.Session(profile_name=profile)
                 s3_client = session.client('s3', region_name=region)
             else:
                 s3_client = boto3.client('s3', region_name=region)
+            print("S3 client created with default credentials.")
                 
         return s3_client
     

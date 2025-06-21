@@ -1,6 +1,6 @@
 {
   "aws": {
-    "region": null,
+    "region": "ap-northeast-1",
     "profile": null,
     "assume_role": {
       "role_arn": "arn:aws:iam::992382419692:role/dataplatform-poc-testServer-role",
