@@ -1,6 +1,6 @@
 import boto3
 import json
-from botocore.exceptions import NoCredentialsError
+from botocore.exceptions import NoCredentialsError, ClientError
 
 s3_client = boto3.client('s3')
 
@@ -20,17 +20,76 @@ def load_config(config_path="config.json"):
         print(f"An error occurred while loading the configuration: {e}")
         return None
 
+def assume_role(aws_config):
+    """Assume Roleを実行して一時的な認証情報を取得する"""
+    assume_role_config = aws_config.get('assume_role')
+    if not assume_role_config:
+        print("Assume role configuration not found.")
+        return None
+
+    try:
+        region = aws_config.get('region')
+        profile = aws_config.get('profile')
+    
+        if profile:
+            session = boto3.Session(profile_name=profile)
+            sts_client = session.client('sts', region_name=region)
+        else:
+            sts_client = boto3.client('sts', region_name=region)
+
+        # Assume Roleを実行
+        role_arn = assume_role_config['role_arn']
+        session_name = assume_role_config['session_name']
+        external_id = assume_role_config.get('external_id')
+        duration = assume_role_config.get('duration_seconds', 3600)
+
+        assume_role_params = {
+            'RoleArn': role_arn,
+            'RoleSessionName': session_name,
+            'DurationSeconds': duration
+        }
+
+        if external_id:
+            assume_role_params['ExternalId'] = external_id
+
+        response = sts_client.assume_role(**assume_role_params)
+        credentials = response['Credentials']
+        return {
+            'access_key_id': credentials['AccessKeyId'],
+            'secret_access_key': credentials['SecretAccessKey'],
+            'session_token': credentials['SessionToken'],
+        }
+    
+    except ClientError as e:
+        print(f"An error occurred while assuming the role: {e}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return None
+
 def create_s3_client(aws_config):
     """S3クライアントを作成する"""
     try:
         region = aws_config.get('region')
         profile = aws_config.get('profile')
 
-        if profile:
-            session = boto3.Session(profile_name=profile)
-            s3_client = session.client('s3', region_name=region)
+        temp_credentials = assume_role(aws_config)
+
+        if temp_credentials:
+            s3_client = boto3.client(
+                's3',
+                region_name=region,
+                aws_access_key_id=temp_credentials['access_key_id'],
+                aws_secret_access_key=temp_credentials['secret_access_key'],
+                aws_session_token=temp_credentials['session_token']
+            )
         else:
-            s3_client = boto3.client('s3', region_name=region)
+            if profile:
+                session = boto3.Session(profile_name=profile)
+                s3_client = session.client('s3', region_name=region)
+            else:
+                s3_client = boto3.client('s3', region_name=region)
+                
         return s3_client
     
     except NoCredentialsError:
