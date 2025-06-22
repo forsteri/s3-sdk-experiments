@@ -217,5 +217,6 @@ def main():
 
     process_upload_tasks(s3_client, config, logger)
 
+
 if __name__ == "__main__":
     main()
