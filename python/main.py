@@ -28,7 +28,7 @@ def setup_logging(config):
         log_dir = os.path.dirname(log_file)
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir)
-            
+
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(logging.Formatter(format_str, datefmt='%Y-%m-%d %H:%M:%S'))
         handlers.append(file_handler)
@@ -155,6 +155,43 @@ def upload_file_to_s3(s3_client, file_path, bucket_name, s3_key, logger):
         logger.error(f"An error occurred: {e}")
         return False
 
+def process_upload_tasks(s3_client, config, logger):
+    """アップロードタスクを処理する"""
+    
+    # 設定取得
+    upload_tasks = config.get('upload_tasks', [])
+    options = config.get('options', {})
+
+    # 実行結果の記録
+    total_tasks = len(upload_tasks)
+    successful_tasks = 0
+    failed_tasks = 0
+
+    logger.info(f"Starting upload tasks: {total_tasks} tasks to process.")
+
+    for i, task in enumerate(upload_tasks, 1):
+        task_name = task.get('name', f"Task {i}")
+
+        # enabledチェック
+        if not task.get('enabled', True):
+            logger.info(f"Skipping disabled task: {task_name}")
+            continue
+
+        source = task.get('source')
+        bucket = task.get('bucket')
+        s3_key = task.get('s3_key')
+
+        success = upload_file_to_s3(s3_client, source, bucket, s3_key, logger)
+        
+        if success:
+            successful_tasks += 1
+            logger.info(f"Task {i}/{total_tasks}: {task_name} Success") 
+        else:
+            failed_tasks += 1
+            logger.error(f"Task {i}/{total_tasks}: {task_name} Failed")
+
+    return successful_tasks, failed_tasks
+
 def main():
     #設定ファイル読み込み
     config = load_config()
@@ -178,17 +215,19 @@ def main():
         logger.error("Failed to create S3 client. Exiting.")
         return
 
-    file_path = "../test-data/sample_data.csv"
-    bucket_name = "s3-experiment-bucket-250615"
-    s3_key = 'sample_data.csv'
+    process_upload_tasks(s3_client, config, logger)
 
-    # ファイルをS3にアップロード
-    upload_status = upload_file_to_s3(s3_client, file_path, bucket_name, s3_key, logger)
+    # file_path = "../test-data/sample_data.csv"
+    # bucket_name = "s3-experiment-bucket-250615"
+    # s3_key = 'sample_data.csv'
 
-    if upload_status:
-        logger.info("File upload was successful.")
-    else:
-        logger.error("File upload failed.")
+    # # ファイルをS3にアップロード
+    # upload_status = upload_file_to_s3(s3_client, file_path, bucket_name, s3_key, logger)
+
+    # if upload_status:
+    #     logger.info("File upload was successful.")
+    # else:
+    #     logger.error("File upload failed.")
 
 if __name__ == "__main__":
     main()

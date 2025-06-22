@@ -30,7 +30,7 @@
       "bucket": "s3-experiment-bucket-250615-small-files",
       "s3_key_prefix": "exports/",
       "recursive": true,
-      "enabled": true
+      "enabled": false
     }
   ],
   "options": {
