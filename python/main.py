@@ -217,17 +217,5 @@ def main():
 
     process_upload_tasks(s3_client, config, logger)
 
-    # file_path = "../test-data/sample_data.csv"
-    # bucket_name = "s3-experiment-bucket-250615"
-    # s3_key = 'sample_data.csv'
-
-    # # ファイルをS3にアップロード
-    # upload_status = upload_file_to_s3(s3_client, file_path, bucket_name, s3_key, logger)
-
-    # if upload_status:
-    #     logger.info("File upload was successful.")
-    # else:
-    #     logger.error("File upload failed.")
-
 if __name__ == "__main__":
     main()
