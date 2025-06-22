@@ -179,9 +179,37 @@ def process_upload_tasks(s3_client, config, logger):
 
         source = task.get('source')
         bucket = task.get('bucket')
-        s3_key = task.get('s3_key')
 
-        success = upload_file_to_s3(s3_client, source, bucket, s3_key, logger)
+        if not source or not bucket:
+            logger.error(f"Task {i}/{total_tasks}: {task_name} is missing source or bucket.")
+            failed_tasks += 1
+            continue
+
+        success = False
+
+        if os.path.isfile(source):
+            s3_key = task.get('s3_key')
+            if not s3_key:
+                logger.error(f"Task {i}/{total_tasks}: {task_name} is missing s3_key for file upload.")
+                failed_tasks += 1
+                continue
+
+            success = upload_file_to_s3(s3_client, source, bucket, s3_key, logger)
+
+        elif os.path.isdir(source):
+            s3_key_prefix = task.get('s3_key_prefix', '')
+            recursive = task.get('recursive', False)
+
+            uploaded_count, failed_count = upload_directory(
+                s3_client, source, bucket, s3_key_prefix, logger, recursive
+            )
+            success = (failed_count == 0)
+            logger.info(f"Task {i}/{total_tasks}: {task_name} - Uploaded {uploaded_count} files, Failed {failed_count} files.")
+
+        else:
+            logger.error(f"Task {i}/{total_tasks}: {task_name} source is neither a file nor a directory.")
+            failed_tasks += 1
+            continue
         
         if success:
             successful_tasks += 1
@@ -190,7 +218,39 @@ def process_upload_tasks(s3_client, config, logger):
             failed_tasks += 1
             logger.error(f"Task {i}/{total_tasks}: {task_name} Failed")
 
+    logger.info(f"Upload tasks completed: {successful_tasks} successful, {failed_tasks} failed.")
     return successful_tasks, failed_tasks
+
+def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive=False):
+    """ディレクトリ内のファイルをS3にアップロード"""
+
+    uploaded_count = 0
+    failed_count = 0
+
+    if recursive:
+        for root, dirs, files in os.walk(source):
+            for file in files:
+                file_path = os.path.join(root, file)
+                relative_path = os.path.relpath(file_path, source)
+                s3_key = s3_key_prefix + relative_path.replace(os.sep, '/')
+
+                if upload_file_to_s3(s3_client, file_path, bucket, s3_key, logger):
+                    uploaded_count += 1
+                else:
+                    failed_count += 1
+
+    else:
+        for item in os.listdir(source):
+            file_path = os.path.join(source, item)
+            if os.path.isfile(file_path):
+                s3_key = s3_key_prefix + item
+
+                if upload_file_to_s3(s3_client, file_path, bucket, s3_key, logger):
+                    uploaded_count += 1
+                else:
+                    failed_count += 1
+
+    return uploaded_count, failed_count
 
 def main():
     #設定ファイル読み込み

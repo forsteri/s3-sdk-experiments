@@ -27,10 +27,10 @@
       "name": "data_directory",
       "description": "データディレクトリ全体のアップロード",
       "source": "../test-data/exports/",
-      "bucket": "s3-experiment-bucket-250615-small-files",
+      "bucket": "s3-experiment-bucket-250615",
       "s3_key_prefix": "exports/",
       "recursive": true,
-      "enabled": false
+      "enabled": true
     }
   ],
   "options": {
