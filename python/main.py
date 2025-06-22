@@ -1,8 +1,46 @@
 import boto3
 import json
+import os
+import logging
 from botocore.exceptions import NoCredentialsError, ClientError
 
-s3_client = boto3.client('s3')
+def setup_logging(config):
+    """ロギングの設定を初期化する"""
+    logging_config = config.get('logging', {})
+
+    # デフォルト値
+    level = logging_config.get('level', 'INFO')
+    format_str = logging_config.get('format', '%(asctime)s - %(levelname)s - %(message)s')
+    log_file = logging_config.get('file', None)
+
+    # ログレベルの設定
+    log_level = getattr(logging, level.upper(), logging.INFO)
+
+    # ロガーの設定
+    handlers = []
+
+    # コンソール出力
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(format_str, datefmt='%Y-%m-%d %H:%M:%S'))
+    handlers.append(console_handler)
+
+    if log_file:
+        log_dir = os.path.dirname(log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+            
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter(format_str, datefmt='%Y-%m-%d %H:%M:%S'))
+        handlers.append(file_handler)
+
+    # ロガーの設定
+    logging.basicConfig(
+        level=log_level,
+        handlers=handlers
+    )
+
+    return logging.getLogger(__name__)
+
 
 def load_config(config_path="config.json"):
     """設定ファイルを読み込む"""
@@ -11,20 +49,20 @@ def load_config(config_path="config.json"):
             config = json.load(file)
         return config
     except FileNotFoundError:
-        print(f"Configuration file {config_path} not found.")
+        logger.error(f"Configuration file {config_path} not found.")
         return None
     except json.JSONDecodeError as e:
-        print(f"Error decoding JSON from the configuration file {config_path}: {e}")
+        logger.error(f"Error decoding JSON from the configuration file {config_path}: {e}")
         return None
     except Exception as e:
-        print(f"An error occurred while loading the configuration: {e}")
+        logger.error(f"An error occurred while loading the configuration: {e}")
         return None
 
-def assume_role(aws_config):
+def assume_role(aws_config, logger):
     """Assume Roleを実行して一時的な認証情報を取得する"""
     assume_role_config = aws_config.get('assume_role')
     if not assume_role_config:
-        print("Assume role configuration not found.")
+        logger.error("Assume role configuration not found.")
         return None
 
     try:
@@ -55,7 +93,7 @@ def assume_role(aws_config):
 
         response = sts_client.assume_role(**assume_role_params)
         credentials = response['Credentials']
-        print(f"Assumed role successfully: {role_arn}")
+        logger.info(f"Assumed role successfully: {role_arn}")
         return {
             'access_key_id': credentials['AccessKeyId'],
             'secret_access_key': credentials['SecretAccessKey'],
@@ -63,19 +101,19 @@ def assume_role(aws_config):
         }
     
     except ClientError as e:
-        print(f"An error occurred while assuming the role: {e}")
+        logger.error(f"An error occurred while assuming the role: {e}")
         return None
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        logger.error(f"An unexpected error occurred: {e}")
         return None
 
-def create_s3_client(aws_config):
+def create_s3_client(aws_config, logger):
     """S3クライアントを作成する"""
     try:
         region = aws_config.get('region')
         profile = aws_config.get('profile')
 
-        temp_credentials = assume_role(aws_config)
+        temp_credentials = assume_role(aws_config, logger)
         if temp_credentials:
             s3_client = boto3.client(
                 's3',
@@ -84,58 +122,60 @@ def create_s3_client(aws_config):
                 aws_secret_access_key=temp_credentials['secret_access_key'],
                 aws_session_token=temp_credentials['session_token']
             )
-            print("S3 client created with assumed role credentials.")
+            logger.info("S3 client created with assumed role credentials.")
         else:
             if profile:
                 session = boto3.Session(profile_name=profile)
                 s3_client = session.client('s3', region_name=region)
             else:
                 s3_client = boto3.client('s3', region_name=region)
-            print("S3 client created with default credentials.")
-                
+            logger.info("S3 client created with default credentials.")
         return s3_client
     
     except NoCredentialsError:
-        print("Credentials not available.")
+        logger.error("Credentials not available.")
         return None
     except Exception as e:
-        print(f"An error occurred while creating the S3 client: {e}")
+        logger.error(f"An error occurred while creating the S3 client: {e}")
         return None
 
-def upload_file_to_s3(s3_client, file_path, bucket_name, s3_key):
+def upload_file_to_s3(s3_client, file_path, bucket_name, s3_key, logger):
     """ファイルをS3にアップロード"""
     try:
         s3_client.upload_file(file_path, bucket_name, s3_key)
-        print(f"File {file_path} uploaded to {bucket_name}/{s3_key}")
+        logger.info(f"File {file_path} uploaded to {bucket_name}/{s3_key}")
         return True
     except FileNotFoundError:
-        print(f"The file {file_path} was not found.")
+        logger.error(f"The file {file_path} was not found.")
         return False
     except NoCredentialsError:
-        print("Credentials not available.")
+        logger.error("Credentials not available.")
         return False
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logger.error(f"An error occurred: {e}")
         return False
 
 def main():
-    print("Start uploading file to S3...")
-
     #設定ファイル読み込み
     config = load_config()
     if not config:
         print("Configuration loading failed. Exiting.")
         return
-    
+
+    # ロガーの初期化
+    logger = setup_logging(config)
+
+    logger.info("Start uploading file to S3...")
+
     aws_config = config.get('aws', {})
     if not aws_config:
-        print("AWS configuration not found in the config file.")
+        logger.error("AWS configuration not found in the config file.")
         return
     
     # S3クライアント作成
-    s3_client = create_s3_client(aws_config)
+    s3_client = create_s3_client(aws_config, logger)
     if not s3_client:
-        print("Failed to create S3 client. Exiting.")
+        logger.error("Failed to create S3 client. Exiting.")
         return
 
     file_path = "../test-data/sample_data.csv"
@@ -143,12 +183,12 @@ def main():
     s3_key = 'sample_data.csv'
 
     # ファイルをS3にアップロード
-    upload_status = upload_file_to_s3(s3_client, file_path, bucket_name, s3_key)
+    upload_status = upload_file_to_s3(s3_client, file_path, bucket_name, s3_key, logger)
 
     if upload_status:
-        print("File upload was successful.")
+        logger.info("File upload was successful.")
     else:
-        print("File upload failed.")
+        logger.error("File upload failed.")
 
 if __name__ == "__main__":
     main()

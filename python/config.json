@@ -11,7 +11,8 @@
   },
   "logging": {
     "level": "INFO",
-    "format": "%(asctime)s - %(levelname)s - %(message)s"
+    "format": "%(asctime)s - %(levelname)s - %(message)s",
+    "file": "logs/s3_uploader.log"
   },
   "upload_tasks": [
     {
