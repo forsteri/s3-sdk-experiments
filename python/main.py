@@ -3,6 +3,7 @@ import json
 import os
 import logging
 import fnmatch
+import time
 from botocore.exceptions import NoCredentialsError, ClientError
 
 def setup_logging(config):
@@ -50,13 +51,13 @@ def load_config(config_path="config.json"):
             config = json.load(file)
         return config
     except FileNotFoundError:
-        logger.error(f"Configuration file {config_path} not found.")
+        print(f"Configuration file {config_path} not found.")
         return None
     except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from the configuration file {config_path}: {e}")
+        print(f"Error decoding JSON from the configuration file {config_path}: {e}")
         return None
     except Exception as e:
-        logger.error(f"An error occurred while loading the configuration: {e}")
+        print(f"An error occurred while loading the configuration: {e}")
         return None
 
 def assume_role(aws_config, logger):
@@ -140,21 +141,37 @@ def create_s3_client(aws_config, logger):
         logger.error(f"An error occurred while creating the S3 client: {e}")
         return None
 
-def upload_file_to_s3(s3_client, file_path, bucket_name, s3_key, logger):
+def upload_file_to_s3(s3_client, file_path, bucket_name, s3_key, logger, dry_run=False, max_retries=3):
     """ファイルをS3にアップロード"""
-    try:
-        s3_client.upload_file(file_path, bucket_name, s3_key)
-        logger.info(f"File {file_path} uploaded to {bucket_name}/{s3_key}")
-        return True
-    except FileNotFoundError:
-        logger.error(f"The file {file_path} was not found.")
-        return False
-    except NoCredentialsError:
-        logger.error("Credentials not available.")
-        return False
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
-        return False
+    
+    for attempt in range(max_retries + 1):
+        try:
+            if dry_run:
+                logger.info(f"[DRY RUN]: Would upload {file_path} to {bucket_name}/{s3_key}")
+                return True
+
+            s3_client.upload_file(file_path, bucket_name, s3_key)
+            logger.info(f"File {file_path} uploaded to {bucket_name}/{s3_key}")
+            return True
+
+        except FileNotFoundError:
+            logger.error(f"File not found: {file_path}")
+            return False
+        except PermissionError:
+            logger.error(f"Permission denied for file: {file_path}")
+            return False
+        except (NoCredentialsError, ClientError, ConnectionError, TimeoutError) as e:
+            if attempt < max_retries:
+                wait_time = 2 ** attempt  # 1, 2, 4秒
+                logger.warning(f"Upload failed (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                logger.info(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Upload failed after {max_retries + 1} attempts: {e}")
+                return False
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while uploading {file_path}: {e}")
+            return False
 
 def process_upload_tasks(s3_client, config, logger):
     """アップロードタスクを処理する"""
@@ -163,6 +180,8 @@ def process_upload_tasks(s3_client, config, logger):
     upload_tasks = config.get('upload_tasks', [])
     options = config.get('options', {})
     exclude_patterns = options.get('exclude_patterns', [])
+    dry_run = options.get('dry_run', False)
+    max_retries = options.get('max_retries', 3)
 
     # 実行結果の記録
     total_tasks = len(upload_tasks)
@@ -196,14 +215,14 @@ def process_upload_tasks(s3_client, config, logger):
                 failed_tasks += 1
                 continue
 
-            success = upload_file_to_s3(s3_client, source, bucket, s3_key, logger)
+            success = upload_file_to_s3(s3_client, source, bucket, s3_key, logger, dry_run, max_retries)
 
         elif os.path.isdir(source):
             s3_key_prefix = task.get('s3_key_prefix', '')
             recursive = task.get('recursive', False)
 
             uploaded_count, failed_count = upload_directory(
-                s3_client, source, bucket, s3_key_prefix, logger, recursive, exclude_patterns
+                s3_client, source, bucket, s3_key_prefix, logger, recursive, exclude_patterns, dry_run, max_retries
             )
             success = (failed_count == 0)
             logger.info(f"Task {i}/{total_tasks}: {task_name} - Uploaded {uploaded_count} files, Failed {failed_count} files.")
@@ -223,7 +242,7 @@ def process_upload_tasks(s3_client, config, logger):
     logger.info(f"Upload tasks completed: {successful_tasks} successful, {failed_tasks} failed.")
     return successful_tasks, failed_tasks
 
-def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive=False, exclude_patterns=None):
+def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive=False, exclude_patterns=None, dry_run=False, max_retries=3):
     """ディレクトリ内のファイルをS3にアップロード"""
 
     if exclude_patterns is None:
@@ -260,7 +279,7 @@ def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive
             if os.path.isfile(file_path):
                 s3_key = s3_key_prefix + item
 
-                if upload_file_to_s3(s3_client, file_path, bucket, s3_key, logger):
+                if upload_file_to_s3(s3_client, file_path, bucket, s3_key, logger, dry_run, max_retries):
                     uploaded_count += 1
                 else:
                     failed_count += 1
