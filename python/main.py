@@ -2,6 +2,7 @@ import boto3
 import json
 import os
 import logging
+import fnmatch
 from botocore.exceptions import NoCredentialsError, ClientError
 
 def setup_logging(config):
@@ -161,6 +162,7 @@ def process_upload_tasks(s3_client, config, logger):
     # 設定取得
     upload_tasks = config.get('upload_tasks', [])
     options = config.get('options', {})
+    exclude_patterns = options.get('exclude_patterns', [])
 
     # 実行結果の記録
     total_tasks = len(upload_tasks)
@@ -201,7 +203,7 @@ def process_upload_tasks(s3_client, config, logger):
             recursive = task.get('recursive', False)
 
             uploaded_count, failed_count = upload_directory(
-                s3_client, source, bucket, s3_key_prefix, logger, recursive
+                s3_client, source, bucket, s3_key_prefix, logger, recursive, exclude_patterns
             )
             success = (failed_count == 0)
             logger.info(f"Task {i}/{total_tasks}: {task_name} - Uploaded {uploaded_count} files, Failed {failed_count} files.")
@@ -221,8 +223,11 @@ def process_upload_tasks(s3_client, config, logger):
     logger.info(f"Upload tasks completed: {successful_tasks} successful, {failed_tasks} failed.")
     return successful_tasks, failed_tasks
 
-def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive=False):
+def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive=False, exclude_patterns=None):
     """ディレクトリ内のファイルをS3にアップロード"""
+
+    if exclude_patterns is None:
+        exclude_patterns = []
 
     uploaded_count = 0
     failed_count = 0
@@ -231,6 +236,11 @@ def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive
         for root, dirs, files in os.walk(source):
             for file in files:
                 file_path = os.path.join(root, file)
+
+                if should_exclude_file(file_path, exclude_patterns):
+                    logger.info(f"Skipping excluded file: {file_path}")
+                    continue
+
                 relative_path = os.path.relpath(file_path, source)
                 s3_key = s3_key_prefix + relative_path.replace(os.sep, '/')
 
@@ -242,6 +252,11 @@ def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive
     else:
         for item in os.listdir(source):
             file_path = os.path.join(source, item)
+    
+            if should_exclude_file(file_path, exclude_patterns):
+                logger.debug(f"Skipping excluded file: {file_path}")
+                continue
+
             if os.path.isfile(file_path):
                 s3_key = s3_key_prefix + item
 
@@ -251,6 +266,19 @@ def upload_directory(s3_client, source, bucket, s3_key_prefix, logger, recursive
                     failed_count += 1
 
     return uploaded_count, failed_count
+
+def should_exclude_file(file_path, exclude_patterns):
+    """ファイルが除外パターンに一致するかチェックする"""
+    file_name = os.path.basename(file_path)
+
+    for pattern in exclude_patterns:
+        # ファイル名でのマッチ
+        if fnmatch.fnmatch(file_name, pattern):
+            return True
+        if fnmatch.fnmatch(file_path, f"*{pattern}*"):
+            return True
+
+    return False
 
 def main():
     #設定ファイル読み込み
