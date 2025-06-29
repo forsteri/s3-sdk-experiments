@@ -224,6 +224,29 @@ def create_transfer_config(options: dict) -> TransferConfig:
         io_chunksize=options.get("io_chunksize", 262144),  # 256KB
     )
 
+def upload_file_with_retry(s3_client, file_path, bucket, s3_key, 
+                          logger, transfer_config, enable_progress, 
+                          dry_run, max_retries):
+    """リトライ機能付きファイルアップロード"""
+    
+    for attempt in range(max_retries + 1):
+        try:
+            return upload_file_to_s3(
+                s3_client, file_path, bucket, s3_key,
+                logger, transfer_config, enable_progress, dry_run
+            )
+        except Exception:
+            if attempt < max_retries:
+                wait_time = 2 ** attempt  # 指数バックオフ
+                logger.warning(f"Upload failed (attempt {attempt + 1}/{max_retries + 1}), "
+                              f"retrying in {wait_time}s: {file_path}")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Upload failed after {max_retries + 1} attempts: {file_path}")
+                raise
+    
+    return False
+
 def upload_file_to_s3(s3_client, file_path: str, bucket_name: str, s3_key: str, 
                             logger, transfer_config: TransferConfig, 
                             enable_progress: bool = True, dry_run: bool = False) -> bool:
@@ -271,16 +294,16 @@ def upload_file_to_s3(s3_client, file_path: str, bucket_name: str, s3_key: str,
 
 def upload_file_task(args: tuple) -> Tuple[bool, str]:
     """単一ファイルアップロードタスク"""
-    s3_client, file_path, bucket, s3_key, logger, transfer_config, enable_progress, dry_run = args
+    s3_client, file_path, bucket, s3_key, logger, transfer_config, enable_progress, dry_run, max_retries = args
     
     try:
-        success = upload_file_to_s3(
-            s3_client, file_path, bucket, s3_key, 
-            logger, transfer_config, enable_progress, dry_run
+        success = upload_file_with_retry(
+            s3_client, file_path, bucket, s3_key,
+            logger, transfer_config, enable_progress, dry_run, max_retries
         )
         return success, file_path
-    except Exception as e:
-        logger.error(f"Upload task failed for {file_path}: {e}")
+    except Exception:
+        logger.error(f"Upload task failed for {file_path}")
         return False, file_path
 
 
@@ -292,6 +315,7 @@ def process_upload_tasks(s3_client, config, logger):
     options = config.get("options", {})
     exclude_patterns = options.get("exclude_patterns", [])
     dry_run = options.get("dry_run", False)
+    max_retries = options.get("max_retries", 3)
     parallel_uploads = options.get("parallel_uploads", 2)
     enable_progress = options.get("enable_progress", True)
 
@@ -334,9 +358,9 @@ def process_upload_tasks(s3_client, config, logger):
                 failed_tasks += 1
                 continue
 
-            success = upload_file_to_s3(
-                s3_client, source, bucket, s3_key, 
-                logger, transfer_config, enable_progress, dry_run
+            success = upload_file_with_retry(
+                s3_client, source, bucket, s3_key,
+                logger, transfer_config, enable_progress, dry_run, max_retries
             )
 
         elif os.path.isdir(source):
@@ -347,7 +371,7 @@ def process_upload_tasks(s3_client, config, logger):
             uploaded_count, failed_count = upload_directory(
                 s3_client, source, bucket, s3_key_prefix, logger,
                 recursive, exclude_patterns, transfer_config, 
-                enable_progress, dry_run, parallel_uploads
+                enable_progress, dry_run, max_retries, parallel_uploads
             )
             success = failed_count == 0
             logger.info(
@@ -373,8 +397,9 @@ def process_upload_tasks(s3_client, config, logger):
 def upload_directory(s3_client, source: str, bucket: str, s3_key_prefix: str,
                            logger, recursive: bool = False, exclude_patterns: List[str] = None,
                            transfer_config: TransferConfig = None, enable_progress: bool = True,
-                           dry_run: bool = False, max_workers: int = 2) -> Tuple[int, int]:
+                           dry_run: bool = False, max_retries: int = 3, max_workers: int = 2) -> Tuple[int, int]:
     """ディレクトリ内のファイルを並列でS3にアップロード"""
+
 
     if exclude_patterns is None:
         exclude_patterns = []
@@ -396,7 +421,7 @@ def upload_directory(s3_client, source: str, bucket: str, s3_key_prefix: str,
                 
                 upload_tasks.append((
                     s3_client, file_path, bucket, s3_key, 
-                    logger, transfer_config, enable_progress, dry_run
+                    logger, transfer_config, enable_progress, dry_run, max_retries
                 ))
     else:
         for item in os.listdir(source):
@@ -411,7 +436,7 @@ def upload_directory(s3_client, source: str, bucket: str, s3_key_prefix: str,
                 
                 upload_tasks.append((
                     s3_client, file_path, bucket, s3_key,
-                    logger, transfer_config, enable_progress, dry_run
+                    logger, transfer_config, enable_progress, dry_run, max_retries
                 ))
 
     # 並列アップロード実行
