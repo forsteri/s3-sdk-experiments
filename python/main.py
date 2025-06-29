@@ -227,7 +227,7 @@ def create_transfer_config(options: dict) -> TransferConfig:
 def upload_file_to_s3(s3_client, file_path: str, bucket_name: str, s3_key: str, 
                             logger, transfer_config: TransferConfig, 
                             enable_progress: bool = True, dry_run: bool = False) -> bool:
-    """boto3の高レベルAPIを使用したシンプルなファイルアップロード"""
+    """ファイルアップロード"""
     
     try:
         if dry_run:
@@ -240,7 +240,7 @@ def upload_file_to_s3(s3_client, file_path: str, bucket_name: str, s3_key: str,
         # プログレストラッカー
         progress_tracker = ProgressTracker(file_size, filename) if enable_progress else None
         
-        # アップロード実行（boto3が全部やってくれる！）
+        # アップロード実行
         s3_client.upload_file(
             file_path, 
             bucket_name, 
@@ -270,7 +270,7 @@ def upload_file_to_s3(s3_client, file_path: str, bucket_name: str, s3_key: str,
 
 
 def upload_file_task(args: tuple) -> Tuple[bool, str]:
-    """単一ファイルアップロードタスク（並列処理用・シンプル版）"""
+    """単一ファイルアップロードタスク"""
     s3_client, file_path, bucket, s3_key, logger, transfer_config, enable_progress, dry_run = args
     
     try:
@@ -285,7 +285,7 @@ def upload_file_task(args: tuple) -> Tuple[bool, str]:
 
 
 def process_upload_tasks(s3_client, config, logger):
-    """アップロードタスクを処理する（シンプル版）"""
+    """アップロードタスクを処理する"""
 
     # 設定取得
     upload_tasks = config.get("upload_tasks", [])

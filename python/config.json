@@ -45,7 +45,7 @@
       "*.swp",
       "Thumbs.db"
     ],
-    "parallel_uploads": 3,
+    "parallel_uploads": 1,
     "multipart_threshold": 104857600,
     "max_concurrency": 4,
     "multipart_chunksize": 10485760,
