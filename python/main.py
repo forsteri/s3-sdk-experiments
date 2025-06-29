@@ -4,7 +4,40 @@ import os
 import logging
 import fnmatch
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from botocore.exceptions import NoCredentialsError, ClientError
+from boto3.s3.transfer import TransferConfig
+from typing import Tuple, List
+
+class ProgressTracker:
+    """アップロード進捗を追跡するクラス"""
+    
+    def __init__(self, total_size: int, filename: str):
+        self.total_size = total_size
+        self.filename = filename
+        self.uploaded_size = 0
+        self.lock = threading.Lock()
+        self.start_time = time.time()
+        
+    def __call__(self, bytes_transferred):
+        """boto3のコールバック関数として使用"""
+        with self.lock:
+            self.uploaded_size += bytes_transferred
+            progress = (self.uploaded_size / self.total_size) * 100
+            elapsed_time = time.time() - self.start_time
+            
+            if elapsed_time > 0:
+                speed = self.uploaded_size / elapsed_time / 1024 / 1024  # MB/s
+                eta = (self.total_size - self.uploaded_size) / (self.uploaded_size / elapsed_time) if self.uploaded_size > 0 else 0
+                
+                print(f"\r{self.filename}: {progress:.1f}% ({self.uploaded_size}/{self.total_size}) - {speed:.2f} MB/s - ETA: {eta:.0f}s", end="", flush=True)
+            
+    def complete(self):
+        """アップロード完了"""
+        elapsed_time = time.time() - self.start_time
+        speed = self.total_size / elapsed_time / 1024 / 1024 if elapsed_time > 0 else 0
+        print(f"\r{self.filename}: Complete! - {speed:.2f} MB/s - {elapsed_time:.1f}s")
 
 
 def setup_logging(config):
@@ -151,64 +184,129 @@ def create_s3_client(aws_config, logger):
         logger.error(f"An error occurred while creating the S3 client: {e}")
         return None
 
+def upload_part(s3_client, file_path: str, bucket: str, s3_key: str, 
+                upload_id: str, part_number: int, start_byte: int, 
+                part_size: int, progress_tracker: ProgressTracker, logger) -> dict:
+    """マルチパートアップロードの一部をアップロード"""
+    try:
+        with open(file_path, 'rb') as f:
+            f.seek(start_byte)
+            data = f.read(part_size)
+            
+        response = s3_client.upload_part(
+            Bucket=bucket,
+            Key=s3_key,
+            PartNumber=part_number,
+            UploadId=upload_id,
+            Body=data
+        )
+        
+        # 進捗更新
+        progress_tracker.update(len(data))
+        
+        return {
+            'ETag': response['ETag'],
+            'PartNumber': part_number
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to upload part {part_number}: {e}")
+        raise
 
-def upload_file_to_s3(
-    s3_client, file_path, bucket_name, s3_key, logger, dry_run=False, max_retries=3
-):
-    """ファイルをS3にアップロード"""
+def create_transfer_config(options: dict) -> TransferConfig:
+    """TransferConfigを作成する"""
+    return TransferConfig(
+        multipart_threshold=options.get("multipart_threshold", 100 * 1024 * 1024),  # 100MB
+        max_concurrency=options.get("max_concurrency", 4),
+        multipart_chunksize=options.get("multipart_chunksize", 10 * 1024 * 1024),   # 10MB
+        use_threads=options.get("use_threads", True),
+        max_io_queue=options.get("max_io_queue", 100),
+        io_chunksize=options.get("io_chunksize", 262144),  # 256KB
+    )
 
-    for attempt in range(max_retries + 1):
-        try:
-            if dry_run:
-                logger.info(
-                    f"[DRY RUN]: Would upload {file_path} to {bucket_name}/{s3_key}"
-                )
-                return True
-
-            s3_client.upload_file(file_path, bucket_name, s3_key)
-            logger.info(f"File {file_path} uploaded to {bucket_name}/{s3_key}")
+def upload_file_to_s3(s3_client, file_path: str, bucket_name: str, s3_key: str, 
+                            logger, transfer_config: TransferConfig, 
+                            enable_progress: bool = True, dry_run: bool = False) -> bool:
+    """boto3の高レベルAPIを使用したシンプルなファイルアップロード"""
+    
+    try:
+        if dry_run:
+            logger.info(f"[DRY RUN]: Would upload {file_path} to {bucket_name}/{s3_key}")
             return True
 
-        except FileNotFoundError:
-            logger.error(f"File not found: {file_path}")
-            return False
-        except PermissionError:
-            logger.error(f"Permission denied for file: {file_path}")
-            return False
-        except (NoCredentialsError, ClientError, ConnectionError, TimeoutError) as e:
-            if attempt < max_retries:
-                wait_time = 2**attempt  # 1, 2, 4秒
-                logger.warning(
-                    f"Upload failed (attempt {attempt + 1}/{max_retries + 1}): {e}"
-                )
-                logger.info(f"Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
-            else:
-                logger.error(f"Upload failed after {max_retries + 1} attempts: {e}")
-                return False
-        except Exception as e:
-            logger.error(
-                f"An unexpected error occurred while uploading {file_path}: {e}"
-            )
-            return False
+        file_size = os.path.getsize(file_path)
+        filename = os.path.basename(file_path)
+        
+        # プログレストラッカー
+        progress_tracker = ProgressTracker(file_size, filename) if enable_progress else None
+        
+        # アップロード実行（boto3が全部やってくれる！）
+        s3_client.upload_file(
+            file_path, 
+            bucket_name, 
+            s3_key,
+            Config=transfer_config,
+            Callback=progress_tracker if progress_tracker else None
+        )
+        
+        if progress_tracker:
+            progress_tracker.complete()
+        
+        logger.info(f"Successfully uploaded {file_path} to {bucket_name}/{s3_key}")
+        return True
+        
+    except FileNotFoundError:
+        logger.error(f"File not found: {file_path}")
+        return False
+    except PermissionError:
+        logger.error(f"Permission denied for file: {file_path}")
+        return False
+    except (NoCredentialsError, ClientError) as e:
+        logger.error(f"AWS error uploading {file_path}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error uploading {file_path}: {e}")
+        return False
+
+
+def upload_file_task(args: tuple) -> Tuple[bool, str]:
+    """単一ファイルアップロードタスク（並列処理用・シンプル版）"""
+    s3_client, file_path, bucket, s3_key, logger, transfer_config, enable_progress, dry_run = args
+    
+    try:
+        success = upload_file_to_s3(
+            s3_client, file_path, bucket, s3_key, 
+            logger, transfer_config, enable_progress, dry_run
+        )
+        return success, file_path
+    except Exception as e:
+        logger.error(f"Upload task failed for {file_path}: {e}")
+        return False, file_path
 
 
 def process_upload_tasks(s3_client, config, logger):
-    """アップロードタスクを処理する"""
+    """アップロードタスクを処理する（シンプル版）"""
 
     # 設定取得
     upload_tasks = config.get("upload_tasks", [])
     options = config.get("options", {})
     exclude_patterns = options.get("exclude_patterns", [])
     dry_run = options.get("dry_run", False)
-    max_retries = options.get("max_retries", 3)
+    parallel_uploads = options.get("parallel_uploads", 2)
+    enable_progress = options.get("enable_progress", True)
 
+    # TransferConfig作成
+    transfer_config = create_transfer_config(options)
+    
     # 実行結果の記録
     total_tasks = len(upload_tasks)
     successful_tasks = 0
     failed_tasks = 0
 
-    logger.info(f"Starting upload tasks: {total_tasks} tasks to process.")
+    logger.info(f"Starting upload tasks: {total_tasks} tasks to process (parallel: {parallel_uploads})")
+    logger.info(f"Transfer config: threshold={transfer_config.multipart_threshold/1024/1024:.0f}MB, "
+                f"concurrency={transfer_config.max_concurrency}, "
+                f"chunk={transfer_config.multipart_chunksize/1024/1024:.0f}MB")
 
     for i, task in enumerate(upload_tasks, 1):
         task_name = task.get("name", f"Task {i}")
@@ -222,41 +320,34 @@ def process_upload_tasks(s3_client, config, logger):
         bucket = task.get("bucket")
 
         if not source or not bucket:
-            logger.error(
-                f"Task {i}/{total_tasks}: {task_name} is missing source or bucket."
-            )
+            logger.error(f"Task {i}/{total_tasks}: {task_name} is missing source or bucket.")
             failed_tasks += 1
             continue
 
         success = False
 
         if os.path.isfile(source):
+            # 単一ファイルアップロード
             s3_key = task.get("s3_key")
             if not s3_key:
-                logger.error(
-                    f"Task {i}/{total_tasks}: {task_name} is missing s3_key for file upload."
-                )
+                logger.error(f"Task {i}/{total_tasks}: {task_name} is missing s3_key for file upload.")
                 failed_tasks += 1
                 continue
 
             success = upload_file_to_s3(
-                s3_client, source, bucket, s3_key, logger, dry_run, max_retries
+                s3_client, source, bucket, s3_key, 
+                logger, transfer_config, enable_progress, dry_run
             )
 
         elif os.path.isdir(source):
+            # ディレクトリアップロード（並列処理）
             s3_key_prefix = task.get("s3_key_prefix", "")
             recursive = task.get("recursive", False)
 
             uploaded_count, failed_count = upload_directory(
-                s3_client,
-                source,
-                bucket,
-                s3_key_prefix,
-                logger,
-                recursive,
-                exclude_patterns,
-                dry_run,
-                max_retries,
+                s3_client, source, bucket, s3_key_prefix, logger,
+                recursive, exclude_patterns, transfer_config, 
+                enable_progress, dry_run, parallel_uploads
             )
             success = failed_count == 0
             logger.info(
@@ -264,9 +355,7 @@ def process_upload_tasks(s3_client, config, logger):
             )
 
         else:
-            logger.error(
-                f"Task {i}/{total_tasks}: {task_name} source is neither a file nor a directory."
-            )
+            logger.error(f"Task {i}/{total_tasks}: {task_name} source is neither a file nor a directory.")
             failed_tasks += 1
             continue
 
@@ -277,48 +366,38 @@ def process_upload_tasks(s3_client, config, logger):
             failed_tasks += 1
             logger.error(f"Task {i}/{total_tasks}: {task_name} Failed")
 
-    logger.info(
-        f"Upload tasks completed: {successful_tasks} successful, {failed_tasks} failed."
-    )
+    logger.info(f"Upload tasks completed: {successful_tasks} successful, {failed_tasks} failed.")
     return successful_tasks, failed_tasks
 
 
-def upload_directory(
-    s3_client,
-    source,
-    bucket,
-    s3_key_prefix,
-    logger,
-    recursive=False,
-    exclude_patterns=None,
-    dry_run=False,
-    max_retries=3,
-):
-    """ディレクトリ内のファイルをS3にアップロード"""
+def upload_directory(s3_client, source: str, bucket: str, s3_key_prefix: str,
+                           logger, recursive: bool = False, exclude_patterns: List[str] = None,
+                           transfer_config: TransferConfig = None, enable_progress: bool = True,
+                           dry_run: bool = False, max_workers: int = 2) -> Tuple[int, int]:
+    """ディレクトリ内のファイルを並列でS3にアップロード"""
 
     if exclude_patterns is None:
         exclude_patterns = []
 
-    uploaded_count = 0
-    failed_count = 0
-
+    # アップロード対象ファイルを収集
+    upload_tasks = []
+    
     if recursive:
         for root, dirs, files in os.walk(source):
             for file in files:
                 file_path = os.path.join(root, file)
 
                 if should_exclude_file(file_path, exclude_patterns):
-                    logger.info(f"Skipping excluded file: {file_path}")
+                    logger.debug(f"Skipping excluded file: {file_path}")
                     continue
 
                 relative_path = os.path.relpath(file_path, source)
                 s3_key = s3_key_prefix + relative_path.replace(os.sep, "/")
-
-                if upload_file_to_s3(s3_client, file_path, bucket, s3_key, logger):
-                    uploaded_count += 1
-                else:
-                    failed_count += 1
-
+                
+                upload_tasks.append((
+                    s3_client, file_path, bucket, s3_key, 
+                    logger, transfer_config, enable_progress, dry_run
+                ))
     else:
         for item in os.listdir(source):
             file_path = os.path.join(source, item)
@@ -329,13 +408,38 @@ def upload_directory(
 
             if os.path.isfile(file_path):
                 s3_key = s3_key_prefix + item
+                
+                upload_tasks.append((
+                    s3_client, file_path, bucket, s3_key,
+                    logger, transfer_config, enable_progress, dry_run
+                ))
 
-                if upload_file_to_s3(
-                    s3_client, file_path, bucket, s3_key, logger, dry_run, max_retries
-                ):
+    # 並列アップロード実行
+    uploaded_count = 0
+    failed_count = 0
+    
+    logger.info(f"Starting parallel upload of {len(upload_tasks)} files with {max_workers} workers")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 全てのタスクを投入
+        future_to_task = {
+            executor.submit(upload_file_task, task): task
+            for task in upload_tasks
+        }
+        
+        # 結果を収集
+        for future in as_completed(future_to_task):
+            try:
+                success, file_path = future.result()
+                if success:
                     uploaded_count += 1
                 else:
                     failed_count += 1
+            except Exception as e:
+                task = future_to_task[future]
+                file_path = task[1]
+                logger.error(f"Upload task exception for {file_path}: {e}")
+                failed_count += 1
 
     return uploaded_count, failed_count
 
