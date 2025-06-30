@@ -46,6 +46,7 @@ class UploadOptions:
     exclude_patterns: List[str] = field(default_factory=list)
     dry_run: bool = False
     max_retries: int = 3
+    timeout_seconds: int = 300  # 追加
     parallel_uploads: int = 2
     enable_progress: bool = True
 
@@ -53,9 +54,13 @@ class UploadOptions:
 @dataclass
 class UploadTask:
     """個別のアップロードタスク"""
+    # 必須フィールド（デフォルト値なし）を先に
     name: str
     source: str
     bucket: str
+    
+    # オプションフィールド（デフォルト値あり）を後に
+    description: Optional[str] = None  # 追加
     enabled: bool = True
     s3_key: Optional[str] = None  # ファイルの場合
     s3_key_prefix: Optional[str] = None  # ディレクトリの場合
