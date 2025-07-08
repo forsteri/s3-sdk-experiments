@@ -1,8 +1,8 @@
 """S3クライアント管理"""
 import boto3
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 from botocore.exceptions import NoCredentialsError, ClientError
-from ..models.config import AWSConfig, AssumeRoleConfig
+from ..models.config import AWSConfig
 from ..utils.logger import LoggerManager
 
 
@@ -13,7 +13,7 @@ class S3ClientManager:
         self.aws_config = aws_config
         self.logger = LoggerManager.get_logger()
         self._client: Optional[boto3.client] = None
-        
+
     def get_client(self) -> boto3.client:
         """S3クライアントを取得（必要に応じて作成）"""
         if self._client is None:

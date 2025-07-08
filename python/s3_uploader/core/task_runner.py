@@ -1,6 +1,6 @@
 """アップロードタスクの実行"""
 import os
-from typing import List, Tuple
+from typing import Tuple
 
 from ..models.config import UploadTask, Config
 from ..utils.logger import LoggerManager

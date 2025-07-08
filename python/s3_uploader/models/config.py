@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 import json
 import os
+import re
 
 
 @dataclass
@@ -21,6 +22,39 @@ class AssumeRoleConfig:
     external_id: Optional[str] = None
     duration_seconds: int = 3600
 
+    def __post_init__(self):
+        """AssumeRole設定のバリデーション"""
+        # role_arnのARNパターンバリデーション
+        arn_pattern = r'^arn:aws:iam::[0-9]{12}:role\/[a-zA-Z0-9+=,.@_-]+$'
+        if not re.match(arn_pattern, self.role_arn):
+            raise ValueError(
+                f"Invalid role_arn format: {self.role_arn}. "
+                "Expected format: arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME"
+            )
+        
+        # session_nameのバリデーション
+        if not self.session_name:
+            raise ValueError("session_name cannot be empty")
+        
+        if not self.session_name.strip():
+            raise ValueError("session_name cannot be only whitespace")
+        
+        # セッション名は2-64文字の英数字、アンダースコア、ハイフン、ピリオドのみ許可
+        session_name_pattern = r'^[a-zA-Z0-9_.-]{2,64}$'
+        if not re.match(session_name_pattern, self.session_name):
+            raise ValueError(
+                f"Invalid session_name: {self.session_name}. "
+                "Must be 2-64 characters long and contain only alphanumeric characters, "
+                "underscores, hyphens, and periods"
+            )
+        
+        # duration_secondsのバリデーション（900秒から43200秒の範囲）
+        if not (900 <= self.duration_seconds <= 43200):
+            raise ValueError(
+                f"Invalid duration_seconds: {self.duration_seconds}. "
+                "Must be between 900 and 43200 seconds (15 minutes to 12 hours)"
+            )
+
 
 @dataclass
 class AWSConfig:
@@ -30,8 +64,13 @@ class AWSConfig:
     assume_role: Optional[AssumeRoleConfig] = None
 
     def __post_init__(self):
-        if self.assume_role and isinstance(self.assume_role, dict):
-            self.assume_role = AssumeRoleConfig(**self.assume_role)
+        if self.assume_role:
+            if isinstance(self.assume_role, dict):
+                self.assume_role = AssumeRoleConfig(**self.assume_role)
+            elif not isinstance(self.assume_role, AssumeRoleConfig):
+                raise TypeError(
+                    f"assume_role must be dict or AssumeRoleConfig, got {type(self.assume_role)}"
+                )
 
 
 @dataclass
