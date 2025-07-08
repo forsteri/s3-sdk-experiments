@@ -6,24 +6,26 @@
 
 ## メインクラス
 
-### S3Uploader
+### TaskRunner
 
-S3アップローダーのメインクラスです。このクラスが全体の処理を統括します。
+アップロードタスクの実行を管理するメインクラスです。このクラスが全体の処理を統括します。
 
 #### 初期化
 
 ```python
-from s3_uploader import S3Uploader
+from s3_uploader.core.task_runner import TaskRunner
+from s3_uploader.models.config import Config
 
-uploader = S3Uploader(config_path="config.json")
+config = Config.from_file("config.json")
+runner = TaskRunner(config)
 ```
 
 **パラメータ**:
-- `config_path` (str): 設定ファイルのパス（デフォルト: "config.json"）
+- `config` (Config): 設定オブジェクト
 
 #### メソッド
 
-##### `run() -> Tuple[int, int]`
+##### `run_all_tasks() -> Tuple[int, int]`
 
 アップロードタスクを実行します。
 
@@ -32,8 +34,14 @@ uploader = S3Uploader(config_path="config.json")
 
 **例**:
 ```python
-uploader = S3Uploader("config.json")
-successful, failed = uploader.run()
+from s3_uploader.core.task_runner import TaskRunner
+from s3_uploader.models.config import Config
+from s3_uploader.utils.logger import LoggerManager
+
+config = Config.from_file("config.json")
+LoggerManager.setup(config.logging)
+runner = TaskRunner(config)
+successful, failed = runner.run_all_tasks()
 print(f"成功: {successful}, 失敗: {failed}")
 ```
 
@@ -255,6 +263,13 @@ S3クライアントを取得します（必要に応じて作成）。
 - `NoCredentialsError`: AWS認証情報が見つからない場合
 - `Exception`: その他のクライアント作成エラー
 
+##### `_assume_role() -> Optional[Dict[str, str]]`
+
+AssumeRoleを実行して一時的な認証情報を取得します。
+
+**戻り値**:
+- `Optional[Dict[str, str]]`: 一時的な認証情報（失敗時はNone）
+
 ### UploadExecutor
 
 ファイルアップロードの実行を管理するクラスです。
@@ -278,6 +293,18 @@ executor = UploadExecutor(s3_client, options)
 ##### `upload_file(file_info: FileInfo, bucket: str, s3_key: str) -> UploadResult`
 
 単一ファイルをアップロードします。
+
+**パラメータ**:
+- `file_info` (FileInfo): ファイル情報
+- `bucket` (str): アップロード先のS3バケット名
+- `s3_key` (str): S3キー
+
+**戻り値**:
+- `UploadResult`: アップロード結果
+
+##### `_retry_upload(file_info: FileInfo, bucket: str, s3_key: str) -> UploadResult`
+
+リトライ機能付きのアップロードを実行します。
 
 **パラメータ**:
 - `file_info` (FileInfo): ファイル情報
@@ -411,13 +438,21 @@ scanner = FileScanner(exclude_patterns=["*.tmp", "*.log"])
 ### 基本的な使用例
 
 ```python
-from s3_uploader import S3Uploader
+from s3_uploader.core.task_runner import TaskRunner
+from s3_uploader.models.config import Config
+from s3_uploader.utils.logger import LoggerManager
 
-# S3Uploaderを初期化
-uploader = S3Uploader("config.json")
+# 設定を読み込み
+config = Config.from_file("config.json")
+
+# ログを設定
+LoggerManager.setup(config.logging)
+
+# TaskRunnerを初期化
+runner = TaskRunner(config)
 
 # アップロードを実行
-successful, failed = uploader.run()
+successful, failed = runner.run_all_tasks()
 
 # 結果を表示
 print(f"成功: {successful}, 失敗: {failed}")
@@ -455,16 +490,20 @@ successful, failed = runner.run_all_tasks()
 ### エラーハンドリング
 
 ```python
-from s3_uploader import S3Uploader
+from s3_uploader.core.task_runner import TaskRunner
 from s3_uploader.models.config import Config
+from s3_uploader.utils.logger import LoggerManager
 
 try:
     # 設定ファイルを読み込み
     config = Config.from_file("config.json")
     
+    # ログを設定
+    LoggerManager.setup(config.logging)
+    
     # アップロードを実行
-    uploader = S3Uploader()
-    successful, failed = uploader.run()
+    runner = TaskRunner(config)
+    successful, failed = runner.run_all_tasks()
     
     if failed > 0:
         print(f"警告: {failed}件のアップロードが失敗しました")

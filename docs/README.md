@@ -85,6 +85,7 @@ S3 Uploaderは、Amazon S3（Simple Storage Service）にファイルを効率�
 ### 2. アプリケーションの実行
 
 ```bash
+cd python
 uv run python main.py
 ```
 
