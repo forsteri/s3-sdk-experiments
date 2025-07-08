@@ -99,8 +99,7 @@ class S3ClientManager:
             
         except ClientError as e:
             self.logger.error(f"Error assuming role: {e}")
-            raise
+            return None
         except Exception as e:
             self.logger.error(f"Unexpected error during assume role: {e}")
-            raise
-        
+            return None
