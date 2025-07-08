@@ -1,15 +1,14 @@
 """S3アップロード実行クラス"""
-import os
 from typing import Optional, Tuple, List
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 from botocore.exceptions import ClientError, NoCredentialsError
-from ..models.config import UploadTask, UploadOptions
+from ..models.config import UploadOptions
 from ..utils.logger import LoggerManager
-from ..utils.progress import ProgressTracker, ProgressManager
-from ..utils.file_utils import FileScanner, FileInfo
+from ..utils.progress import ProgressManager
+from ..utils.file_utils import FileInfo
 from .transfer import TransferConfigManager
 
 
