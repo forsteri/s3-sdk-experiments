@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"s3-uploader/internal/logger"
 	"s3-uploader/internal/models"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -23,6 +24,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("設定読み込みエラー: %v", err)
 	}
+
+	// ロガーをセットアップ
+	log, err := logger.Setup(cfg.Logging)
+	if err != nil {
+		log.Fatalf("❌ ロガーの初期化に失敗: %v", err)
+	}
+
+	// ロガーを使ってみる
+	log.Info("S3 Uploader initialized")
+	log.Debug("This is a debug message")
+
+	log.Info("設定ファイルの読み込み成功",
+		"region", cfg.AWS.Region,
+		"tasks", len(cfg.UploadTasks),
+	)
 
 	// 2. S3クライアントを作成
 	s3Client, err := createS3Client(cfg.AWS)
