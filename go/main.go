@@ -26,16 +26,16 @@ func main() {
 	}
 
 	// ロガーをセットアップ
-	log, err := logger.Setup(cfg.Logging)
+	lgr, err := logger.Setup(cfg.Logging)
 	if err != nil {
 		log.Fatalf("❌ ロガーの初期化に失敗: %v", err)
 	}
 
 	// ロガーを使ってみる
-	log.Info("S3 Uploader initialized")
-	log.Debug("This is a debug message")
+	lgr.Info("S3 Uploader initialized")
+	lgr.Debug("This is a debug message")
 
-	log.Info("設定ファイルの読み込み成功",
+	lgr.Info("設定ファイルの読み込み成功",
 		"region", cfg.AWS.Region,
 		"tasks", len(cfg.UploadTasks),
 	)

@@ -66,6 +66,9 @@ func Setup(config models.LoggingConfig) (*Logger, error) {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
 
+		// 注意: このファイルハンドルはアプリケーションの終了時まで開いたままにする必要があります
+		// 必要に応じて、graceful shutdownの実装を検討してください
+
 		writers = append(writers, file)
 	}
 
@@ -73,7 +76,9 @@ func Setup(config models.LoggingConfig) (*Logger, error) {
 	multiWriter := io.MultiWriter(writers...)
 
 	// フォーマットに応じてハンドラーを選択
-	// Python版のフォーマットに近づける
+	// TODO: format文字列に"asctime"が含まれるかでハンドラーを判定するのは適切でない
+	//       将来的には専用のhandlerフィールドを追加して明示的に指定できるようにすべき
+	//       例: handler: "text" | "json"
 	if strings.Contains(config.Format, "asctime") {
 		// テキストハンドラー（人間が読みやすい形式）
 		handler = slog.NewTextHandler(multiWriter, opts)
