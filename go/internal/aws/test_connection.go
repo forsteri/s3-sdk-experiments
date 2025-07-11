@@ -24,17 +24,18 @@ const (
 
 // TestConnectionOptions 接続テストのオプション
 type TestConnectionOptions struct {
-	Mode           TestConnectionMode
-	TestKeyPrefix  string // TestModePutObjectで使用するキーのプレフィックス
-	CleanupTestObj bool   // テストオブジェクトを削除するか
+	Mode          TestConnectionMode
+	TestKeyPrefix string // TestModePutObjectで使用するキーのプレフィックス
+	// CleanupTestObj フィールドは将来の実装のために予約
+	// 現在はDeleteObject権限が必要なため実装していない
+	// CleanupTestObj bool
 }
 
 // DefaultTestConnectionOptions デフォルトのテストオプション
 func DefaultTestConnectionOptions() TestConnectionOptions {
 	return TestConnectionOptions{
-		Mode:           TestModeAuto,
-		TestKeyPrefix:  ".s3-uploader-test/",
-		CleanupTestObj: false, // DeleteObject権限がない場合があるためデフォルトはfalse
+		Mode:          TestModeAuto,
+		TestKeyPrefix: "_test-objects/s3-uploader/", // より明示的なプレフィックス
 	}
 }
 
@@ -76,8 +77,8 @@ func (cm *ClientManager) testWithHeadBucket(ctx context.Context, bucket string) 
 
 // testWithPutObject 実際にオブジェクトをアップロードして接続テスト
 func (cm *ClientManager) testWithPutObject(ctx context.Context, bucket string, prefix string) error {
-	// テスト用のキーを生成
-	testKey := fmt.Sprintf("%sconnection-test-%d.txt", prefix, time.Now().Unix())
+	// テスト用のキーを生成（ナノ秒を使用して衝突を防ぐ）
+	testKey := fmt.Sprintf("%sconnection-test-%d.txt", prefix, time.Now().UnixNano())
 	testContent := fmt.Sprintf("S3 connection test at %s", time.Now().Format(time.RFC3339))
 	
 	cm.logger.Debug("Testing with PutObject", "key", testKey)
@@ -89,8 +90,9 @@ func (cm *ClientManager) testWithPutObject(ctx context.Context, bucket string, p
 		Body:        strings.NewReader(testContent),
 		ContentType: aws.String("text/plain"),
 		Metadata: map[string]string{
-			"purpose": "connection-test",
-			"auto-delete": "true",
+			"purpose":   "connection-test",
+			"timestamp": time.Now().Format(time.RFC3339),
+			"tool":      "s3-uploader-go",
 		},
 	})
 	
@@ -102,6 +104,10 @@ func (cm *ClientManager) testWithPutObject(ctx context.Context, bucket string, p
 		"bucket", bucket,
 		"test_key", testKey,
 	)
+	
+	// 注意: テストオブジェクトは自動削除されません
+	// 必要に応じて、S3のライフサイクルポリシーで
+	// _test-objects/ プレフィックスのオブジェクトを定期的に削除することを推奨
 	
 	return nil
 }
