@@ -12,7 +12,11 @@ go/
 ├── cmd/                # アプリケーションのメインコマンド
 │   ├── uploader/
 │   │   └── main.go
-│   └── scan-test/      # ファイルスキャンテスト
+│   ├── scan-test/      # ファイルスキャンテスト
+│   │   └── main.go
+│   ├── client-test/    # S3クライアントテスト
+│   │   └── main.go
+│   └── upload-test/    # アップロードテスト
 │       └── main.go
 ├── internal/           # 内部パッケージ（外部から使用不可）
 │   ├── models/         # 設定管理（実装済み）
@@ -26,7 +30,9 @@ go/
 │   ├── aws/            # AWS関連（実装済み）
 │   │   ├── client.go   # S3クライアント管理
 │   │   └── operations.go # S3操作ヘルパー
-│   ├── uploader/       # アップロード処理（未実装）
+│   ├── uploader/       # アップロード処理（実装中）
+│   │   ├── uploader.go # 基本的なアップロード機能
+│   │   └── retry.go    # リトライ機能
 │   └── progress/       # 進捗管理（未実装）
 ├── pkg/                # 外部パッケージ（ライブラリとして利用可能）
 ├── config.json         # 設定ファイル
@@ -60,6 +66,14 @@ go/
 - メタデータ付きアップロード
 - Content-Typeの自動推測
 
+### ファイルアップロード機能 (internal/uploader)
+- 単一ファイルアップロード
+- ディレクトリアップロード（再帰的/非再帰的）
+- ドライランモード対応
+- リトライ機能（指数バックオフ）
+- 除外パターンの適用
+- 詳細なアップロード結果レポート
+
 ### 使用方法
 
 1. **テストの実行**:
@@ -83,6 +97,18 @@ go/
 4. **メインプログラムの実行**:
    ```bash
    go run main.go
+   ```
+
+5. **アップロードテストの実行**:
+   ```bash
+   # 単一ファイルのアップロード
+   go run cmd/upload-test/main.go -source ../test-data/sample_data.csv -key test/sample.csv
+   
+   # ディレクトリのアップロード
+   go run cmd/upload-test/main.go -source ../test-data/exports -key exports/ -recursive
+   
+   # ドライランモード
+   go run cmd/upload-test/main.go -source ../test-data -dry-run -recursive
    ```
 
 ## 次のステップ
