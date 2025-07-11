@@ -46,9 +46,9 @@ func (u *Uploader) UploadFileWithRetry(ctx context.Context, filePath string, buc
 				"attempt", attempt+1,
 				"max_retries", maxRetries+1,
 			)
-			
+
 			// リトライ間隔（指数バックオフ）
-			delay := time.Duration(attempt) * time.Second
+			delay := time.Duration(1<<uint(attempt-1)) * time.Second
 			if delay > 30*time.Second {
 				delay = 30 * time.Second
 			}
@@ -68,6 +68,14 @@ func (u *Uploader) UploadFileWithRetry(ctx context.Context, filePath string, buc
 	}
 
 	// すべてのリトライが失敗
+	if result == nil {
+		result = &UploadResult{
+			Source:  filePath,
+			Bucket:  bucket,
+			Key:     key,
+			Success: false,
+		}
+	}
 	result.Error = fmt.Errorf("upload failed after %d attempts: %w", maxRetries+1, lastErr)
 	return result, result.Error
 }
@@ -120,7 +128,7 @@ func (u *Uploader) CalculateTotalSize(files []fileutils.FileInfo) int64 {
 func (u *Uploader) ShouldSkipFile(filePath string) (bool, string) {
 	// 除外パターンはすでにスキャナーで処理されているので、
 	// ここでは追加のチェックを行う（将来の拡張用）
-	
+
 	// 例: 0バイトファイルをスキップ
 	info, err := u.scanner.GetFileInfo(filePath)
 	if err == nil && info.Size == 0 && !u.uploadConfig.DryRun {
