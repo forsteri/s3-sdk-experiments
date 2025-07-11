@@ -10,7 +10,7 @@ go/
 ├── go.sum              # 依存関係のチェックサム（自動生成）
 ├── main.go             # エントリーポイント
 ├── cmd/                # アプリケーションのメインコマンド
-│   ├── uploader/
+│   ├── task-runner/    # タスクランナー（実装済み）
 │   │   └── main.go
 │   ├── scan-test/      # ファイルスキャンテスト
 │   │   └── main.go
@@ -30,9 +30,10 @@ go/
 │   ├── aws/            # AWS関連（実装済み）
 │   │   ├── client.go   # S3クライアント管理
 │   │   └── operations.go # S3操作ヘルパー
-│   ├── uploader/       # アップロード処理（実装中）
+│   ├── uploader/       # アップロード処理（実装済み）
 │   │   ├── uploader.go # 基本的なアップロード機能
-│   │   └── retry.go    # リトライ機能
+│   │   ├── retry.go    # リトライ機能
+│   │   └── task_runner.go # タスクランナー
 │   └── progress/       # 進捗管理（未実装）
 ├── pkg/                # 外部パッケージ（ライブラリとして利用可能）
 ├── config.json         # 設定ファイル
@@ -74,6 +75,13 @@ go/
 - 除外パターンの適用
 - 詳細なアップロード結果レポート
 
+### タスクランナー機能 (internal/uploader/task_runner.go)
+- config.jsonのupload_tasksを自動実行
+- 個別タスクの実行もサポート
+- 実行結果の詳細レポート
+- ドライランモード対応
+- 失敗時の適切な終了コード
+
 ### 使用方法
 
 1. **テストの実行**:
@@ -96,10 +104,29 @@ go/
 
 4. **メインプログラムの実行**:
    ```bash
+   # 通常モード（すべてのタスクを実行）
    go run main.go
+   
+   # テストモード（単一ファイルアップロードのテスト）
+   go run main.go -test
+   
+   # ドライランモード
+   go run main.go -dry-run
    ```
 
-5. **アップロードテストの実行**:
+5. **タスクランナーの実行**:
+   ```bash
+   # すべてのタスクを実行
+   go run cmd/task-runner/main.go
+   
+   # 特定のタスクのみを実行
+   go run cmd/task-runner/main.go -task sample_data
+   
+   # ドライランモード
+   go run cmd/task-runner/main.go -dry-run
+   ```
+
+6. **アップロードテストの実行**:
    ```bash
    # 単一ファイルのアップロード
    go run cmd/upload-test/main.go -source ../test-data/sample_data.csv -key test/sample.csv
@@ -113,8 +140,8 @@ go/
 
 ## 次のステップ
 
-アップロード処理の実装に進みます。以下の機能を追加予定：
-- アップロード実行機能 (internal/uploader)
+基本的なアップローダー機能は完成しました！
+残りは高機能化の実装：
+- 並列アップロード機能 (goroutines + worker pool)
 - 進捗表示機能 (internal/progress)
-- タスクランナー (internal/uploader)
-- マルチパートアップロード対応
+- マルチパートアップロード対応（大容量ファイル向け）
