@@ -87,11 +87,13 @@ func main() {
 			"count", len(objects),
 		)
 		for _, obj := range objects {
-			lgr.Debug("Object found",
-				"key", *obj.Key,
-				"size", obj.Size,
-				"modified", obj.LastModified,
-			)
+			if obj.Key != nil {
+				lgr.Debug("Object found",
+					"key", *obj.Key,
+					"size", obj.Size,
+					"modified", obj.LastModified,
+				)
+			}
 		}
 	}
 

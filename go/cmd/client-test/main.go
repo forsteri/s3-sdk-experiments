@@ -74,7 +74,11 @@ func main() {
 				if i >= 5 {
 					break
 				}
-				fmt.Printf("  - %s (Size: %d bytes)\n", *obj.Key, obj.Size)
+				if obj.Key != nil {
+					fmt.Printf("  - %s (Size: %d bytes)\n", *obj.Key, obj.Size)
+				} else {
+					fmt.Printf("  - <unknown key> (Size: %d bytes)\n", obj.Size)
+				}
 			}
 		}
 	}
