@@ -4,149 +4,98 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
+	awsclient "s3-uploader/internal/aws"
 	"s3-uploader/internal/logger"
 	"s3-uploader/internal/models"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 func main() {
 	fmt.Println("🚀 S3アップロードテスト開始...")
 
-	// 1. 設定を読み込み（君が作った関数を使う）
+	// 1. 設定を読み込み
 	cfg, err := models.LoadFromFile("config.json")
 	if err != nil {
 		log.Fatalf("設定読み込みエラー: %v", err)
 	}
 
-	// ロガーをセットアップ
-	lgr, err := logger.Setup(cfg.Logging)
+	// 2. ロガーをセットアップ
+	_, err = logger.Setup(cfg.Logging)
 	if err != nil {
 		log.Fatalf("❌ ロガーの初期化に失敗: %v", err)
 	}
 
-	// ロガーを使ってみる
+	// ロガーを取得
+	lgr := logger.GetLogger()
 	lgr.Info("S3 Uploader initialized")
-	lgr.Debug("This is a debug message")
-
 	lgr.Info("設定ファイルの読み込み成功",
 		"region", cfg.AWS.Region,
 		"tasks", len(cfg.UploadTasks),
 	)
 
-	// 2. S3クライアントを作成
-	s3Client, err := createS3Client(cfg.AWS)
+	// 3. S3クライアントマネージャーを作成
+	clientManager, err := awsclient.NewClientManager(cfg.AWS)
 	if err != nil {
-		log.Fatalf("S3クライアント作成エラー: %v", err)
+		lgr.Fatalf("S3クライアント作成エラー: %v", err)
 	}
 
-	// 3. テストファイルをアップロード
+	// 4. 接続テスト
+	ctx := context.Background()
+	testBucket := "datalake-poc-raw-891376985958"
+
+	lgr.Info("S3接続テストを実行中...", "bucket", testBucket)
+	if err := clientManager.TestConnection(ctx, testBucket); err != nil {
+		lgr.Fatalf("S3接続テスト失敗: %v", err)
+	}
+
+	// 5. テストファイルをアップロード
 	testFile := "../test-data/sample_data.csv"
-	bucket := "s3-experiment-bucket-250615"
 	key := "test-upload/sample_data.csv"
 
-	fmt.Printf("📁 アップロード中: %s -> s3://%s/%s\n", testFile, bucket, key)
+	lgr.Info("ファイルアップロードを開始",
+		"file", testFile,
+		"bucket", testBucket,
+		"key", key,
+	)
 
-	err = uploadFile(s3Client, bucket, key, testFile)
-	if err != nil {
-		log.Fatalf("アップロードエラー: %v", err)
+	// メタデータを追加してアップロード
+	metadata := map[string]string{
+		"uploaded-by": "s3-uploader-go",
+		"version":     "1.0.0",
 	}
 
-	fmt.Println("✅ アップロード成功！")
-}
+	err = clientManager.UploadFileWithMetadata(ctx, testBucket, key, testFile, metadata)
+	if err != nil {
+		lgr.Fatalf("アップロードエラー: %v", err)
+	}
 
-// S3クライアントを作成
-func createS3Client(awsConfig models.AWSConfig) (*s3.Client, error) {
-	ctx := context.Background()
+	// 6. アップロードしたオブジェクトの存在確認
+	exists, err := clientManager.ObjectExists(ctx, testBucket, key)
+	if err != nil {
+		lgr.Error("オブジェクト存在確認エラー", "error", err)
+	} else if exists {
+		lgr.Info("アップロードしたオブジェクトの存在を確認しました")
+	}
 
-	// AWS設定をロード
-	var cfg aws.Config
-	var err error
-
-	if awsConfig.Profile != nil && *awsConfig.Profile != "" {
-		// プロファイルを使用
-		cfg, err = config.LoadDefaultConfig(ctx,
-			config.WithRegion(awsConfig.Region),
-			config.WithSharedConfigProfile(*awsConfig.Profile),
-		)
+	// 7. オブジェクト一覧を取得してみる
+	objects, err := clientManager.ListObjects(ctx, testBucket, "test-upload/")
+	if err != nil {
+		lgr.Error("オブジェクト一覧取得エラー", "error", err)
 	} else {
-		// デフォルト認証
-		cfg, err = config.LoadDefaultConfig(ctx,
-			config.WithRegion(awsConfig.Region),
+		lgr.Info("オブジェクト一覧",
+			"prefix", "test-upload/",
+			"count", len(objects),
 		)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("AWS設定の読み込みエラー: %w", err)
-	}
-
-	// AssumeRoleが必要な場合
-	if awsConfig.AssumeRole != nil {
-		fmt.Println("🔐 AssumeRoleを実行中...")
-
-		stsClient := sts.NewFromConfig(cfg)
-
-		assumeRoleInput := &sts.AssumeRoleInput{
-			RoleArn:         aws.String(awsConfig.AssumeRole.RoleArn),
-			RoleSessionName: aws.String(awsConfig.AssumeRole.SessionName),
-			DurationSeconds: aws.Int32(int32(awsConfig.AssumeRole.DurationSeconds)),
+		for _, obj := range objects {
+			if obj.Key != nil {
+				lgr.Debug("Object found",
+					"key", *obj.Key,
+					"size", obj.Size,
+					"modified", obj.LastModified,
+				)
+			}
 		}
-
-		if awsConfig.AssumeRole.ExternalID != nil {
-			assumeRoleInput.ExternalId = awsConfig.AssumeRole.ExternalID
-		}
-
-		result, err := stsClient.AssumeRole(ctx, assumeRoleInput)
-		if err != nil {
-			return nil, fmt.Errorf("AssumeRoleエラー: %w", err)
-		}
-
-		// 一時的な認証情報を使って新しい設定を作成
-		cfg.Credentials = credentials.NewStaticCredentialsProvider(
-			*result.Credentials.AccessKeyId,
-			*result.Credentials.SecretAccessKey,
-			*result.Credentials.SessionToken,
-		)
-
-		fmt.Println("✅ AssumeRole成功！")
 	}
 
-	return s3.NewFromConfig(cfg), nil
-}
-
-// ファイルをアップロード
-func uploadFile(client *s3.Client, bucket, key, filePath string) error {
-	// ファイルを開く
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("ファイルオープンエラー: %w", err)
-	}
-	defer file.Close()
-
-	// ファイル情報を取得
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("ファイル情報取得エラー: %w", err)
-	}
-
-	fmt.Printf("📊 ファイルサイズ: %d bytes\n", fileInfo.Size())
-
-	// S3にアップロード
-	_, err = client.PutObject(context.Background(), &s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Body:   file,
-	})
-
-	if err != nil {
-		return fmt.Errorf("S3アップロードエラー: %w", err)
-	}
-
-	return nil
+	fmt.Println("✅ すべてのテストが完了しました！")
 }

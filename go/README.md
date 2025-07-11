@@ -23,7 +23,9 @@ go/
 │   │   ├── scanner.go
 │   │   ├── scanner_test.go
 │   │   └── scanner_bench_test.go
-│   ├── aws/            # AWS関連（未実装）
+│   ├── aws/            # AWS関連（実装済み）
+│   │   ├── client.go   # S3クライアント管理
+│   │   └── operations.go # S3操作ヘルパー
 │   ├── uploader/       # アップロード処理（未実装）
 │   └── progress/       # 進捗管理（未実装）
 ├── pkg/                # 外部パッケージ（ライブラリとして利用可能）
@@ -50,6 +52,14 @@ go/
 - 単一ファイル情報の取得
 - 包括的なユニットテストとベンチマークテスト
 
+### AWS S3クライアント管理 (internal/aws)
+- 設定ベースのS3クライアント作成
+- プロファイル認証とAssumeRole対応
+- リトライ設定のカスタマイズ
+- S3操作ヘルパー関数（アップロード、一覧取得、存在確認）
+- メタデータ付きアップロード
+- Content-Typeの自動推測
+
 ### 使用方法
 
 1. **テストの実行**:
@@ -63,10 +73,22 @@ go/
    go run cmd/scan-test/main.go
    ```
 
+3. **S3クライアントのテスト実行**:
+   ```bash
+   go run cmd/client-test/main.go
+   # または特定のバケットを指定
+   go run cmd/client-test/main.go -bucket your-bucket-name
+   ```
+
+4. **メインプログラムの実行**:
+   ```bash
+   go run main.go
+   ```
+
 ## 次のステップ
 
 アップロード処理の実装に進みます。以下の機能を追加予定：
-- S3クライアントマネージャー (internal/aws)
 - アップロード実行機能 (internal/uploader)
 - 進捗表示機能 (internal/progress)
 - タスクランナー (internal/uploader)
+- マルチパートアップロード対応
