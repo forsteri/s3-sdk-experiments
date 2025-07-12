@@ -2,100 +2,125 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
+	"os"
 
 	awsclient "s3-uploader/internal/aws"
 	"s3-uploader/internal/logger"
 	"s3-uploader/internal/models"
+	"s3-uploader/internal/uploader"
 )
 
 func main() {
-	fmt.Println("🚀 S3アップロードテスト開始...")
+	// コマンドライン引数
+	var (
+		configFile = flag.String("config", "config.json", "設定ファイルのパス")
+		dryRun     = flag.Bool("dry-run", false, "ドライランモード")
+		testMode   = flag.Bool("test", false, "テストモード（単一ファイルアップロードのテスト）")
+	)
+	flag.Parse()
 
-	// 1. 設定を読み込み
-	cfg, err := models.LoadFromFile("config.json")
+	fmt.Println("🚀 S3 Uploader - Go version")
+	fmt.Println("========================================")
+
+	// 設定を読み込み
+	cfg, err := models.LoadFromFile(*configFile)
 	if err != nil {
 		log.Fatalf("設定読み込みエラー: %v", err)
 	}
 
-	// 2. ロガーをセットアップ
+	// ドライランモードの上書き
+	if *dryRun {
+		cfg.Options.DryRun = true
+	}
+
+	// ロガーをセットアップ
 	_, err = logger.Setup(cfg.Logging)
 	if err != nil {
 		log.Fatalf("❌ ロガーの初期化に失敗: %v", err)
 	}
 
-	// ロガーを取得
 	lgr := logger.GetLogger()
-	lgr.Info("S3 Uploader initialized")
-	lgr.Info("設定ファイルの読み込み成功",
-		"region", cfg.AWS.Region,
-		"tasks", len(cfg.UploadTasks),
+	lgr.Info("S3 Uploader initialized",
+		"config_file", *configFile,
+		"dry_run", cfg.Options.DryRun,
+		"test_mode", *testMode,
 	)
 
-	// 3. S3クライアントマネージャーを作成
+	// S3クライアントマネージャーを作成
 	clientManager, err := awsclient.NewClientManager(cfg.AWS)
 	if err != nil {
 		lgr.Fatalf("S3クライアント作成エラー: %v", err)
 	}
 
-	// 4. 接続テスト
 	ctx := context.Background()
-	testBucket := "datalake-poc-raw-891376985958"
 
-	lgr.Info("S3接続テストを実行中...", "bucket", testBucket)
-	if err := clientManager.TestConnection(ctx, testBucket); err != nil {
-		lgr.Fatalf("S3接続テスト失敗: %v", err)
-	}
+	if *testMode {
+		// テストモード：単一ファイルアップロードのテスト
+		testBucket := "datalake-poc-raw-891376985958"
+		testFile := "../test-data/sample_data.csv"
+		key := "test-upload/sample_data.csv"
 
-	// 5. テストファイルをアップロード
-	testFile := "../test-data/sample_data.csv"
-	key := "test-upload/sample_data.csv"
+		lgr.Info("Running in test mode")
+		
+		// 接続テスト
+		lgr.Info("Testing S3 connection...", "bucket", testBucket)
+		if err := clientManager.TestConnection(ctx, testBucket); err != nil {
+			lgr.Fatalf("S3接続テスト失敗: %v", err)
+		}
 
-	lgr.Info("ファイルアップロードを開始",
-		"file", testFile,
-		"bucket", testBucket,
-		"key", key,
-	)
-
-	// メタデータを追加してアップロード
-	metadata := map[string]string{
-		"uploaded-by": "s3-uploader-go",
-		"version":     "1.0.0",
-	}
-
-	err = clientManager.UploadFileWithMetadata(ctx, testBucket, key, testFile, metadata)
-	if err != nil {
-		lgr.Fatalf("アップロードエラー: %v", err)
-	}
-
-	// 6. アップロードしたオブジェクトの存在確認
-	exists, err := clientManager.ObjectExists(ctx, testBucket, key)
-	if err != nil {
-		lgr.Error("オブジェクト存在確認エラー", "error", err)
-	} else if exists {
-		lgr.Info("アップロードしたオブジェクトの存在を確認しました")
-	}
-
-	// 7. オブジェクト一覧を取得してみる
-	objects, err := clientManager.ListObjects(ctx, testBucket, "test-upload/")
-	if err != nil {
-		lgr.Error("オブジェクト一覧取得エラー", "error", err)
-	} else {
-		lgr.Info("オブジェクト一覧",
-			"prefix", "test-upload/",
-			"count", len(objects),
+		// テストファイルをアップロード
+		lgr.Info("Uploading test file",
+			"file", testFile,
+			"bucket", testBucket,
+			"key", key,
 		)
-		for _, obj := range objects {
-			if obj.Key != nil {
-				lgr.Debug("Object found",
-					"key", *obj.Key,
-					"size", obj.Size,
-					"modified", obj.LastModified,
-				)
-			}
+
+		// メタデータを追加してアップロード
+		metadata := map[string]string{
+			"uploaded-by": "s3-uploader-go",
+			"version":     "1.0.0",
+			"mode":        "test",
+		}
+
+		err = clientManager.UploadFileWithMetadata(ctx, testBucket, key, testFile, metadata)
+		if err != nil {
+			lgr.Fatalf("アップロードエラー: %v", err)
+		}
+
+		// アップロードしたオブジェクトの存在確認
+		exists, err := clientManager.ObjectExists(ctx, testBucket, key)
+		if err != nil {
+			lgr.Error("オブジェクト存在確認エラー", "error", err)
+		} else if exists {
+			lgr.Info("✅ アップロードしたオブジェクトの存在を確認しました")
+		}
+
+		fmt.Println("\n✅ テストモードが完了しました！")
+	} else {
+		// 通常モード：タスクランナーを実行
+		lgr.Info("Starting task runner mode")
+		
+		// タスクランナーを作成
+		runner := uploader.NewTaskRunner(clientManager, *cfg)
+
+		// すべてのタスクを実行
+		report, err := runner.RunAllTasks(ctx)
+		if err != nil {
+			lgr.Fatalf("タスク実行エラー: %v", err)
+		}
+
+		// レポートを表示
+		runner.PrintReport(report)
+
+		// 終了処理
+		if report.FailedTasks > 0 {
+			lgr.Error("⚠️  Some tasks failed", "failed_count", report.FailedTasks)
+			os.Exit(1)
+		} else {
+			fmt.Println("\n✅ すべてのタスクが正常に完了しました！")
 		}
 	}
-
-	fmt.Println("✅ すべてのテストが完了しました！")
 }
