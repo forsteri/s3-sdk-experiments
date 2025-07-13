@@ -1,6 +1,25 @@
 # S3 Uploader - Go版
 
-Python版のS3 UploaderをGoで再実装したプロジェクトです。
+Python版のS3 UploaderをGoで再実装したプロジェクトです。**シングルバイナリで動作**し、設定ファイルベースで複数のアップロードタスクを自動実行できます。
+
+## クイックスタート
+
+```bash
+# ビルド
+make build
+
+# 実行（config.jsonの全タスクを実行）
+./bin/s3-uploader
+
+# バージョン確認
+./bin/s3-uploader --version
+
+# ドライランモード
+./bin/s3-uploader --dry-run
+
+# テストモード（単一ファイルアップロード）
+./bin/s3-uploader --test
+```
 
 ## 主な機能
 
@@ -19,49 +38,32 @@ Python版のS3 UploaderをGoで再実装したプロジェクトです。
 
 ```
 go/
+├── Makefile            # ビルド・開発タスク管理
 ├── go.mod              # Goモジュール定義
-├── go.sum              # 依存関係のチェックサム（自動生成）
-├── main.go             # エントリーポイント
-├── cmd/                # アプリケーションのメインコマンド
-│   ├── task-runner/    # タスクランナー（実装済み）
-│   │   └── main.go
-│   ├── scan-test/      # ファイルスキャンテスト
-│   │   └── main.go
-│   ├── client-test/    # S3クライアントテスト
-│   │   └── main.go
-│   ├── upload-test/    # アップロードテスト
-│   │   └── main.go
-│   ├── parallel-test/  # 並列アップロードテスト
-│   │   └── main.go
-│   └── multipart-test/ # マルチパートアップロードテスト（NEW!）
-│       └── main.go
-├── internal/           # 内部パッケージ（外部から使用不可）
-│   ├── models/         # 設定管理（実装済み）
-│   │   └── config.go
-│   ├── logger/         # ログ管理（実装済み）
-│   │   └── logger.go
-│   ├── fileutils/      # ファイルスキャン（実装済み）
-│   │   ├── scanner.go
-│   │   ├── scanner_test.go
-│   │   └── scanner_bench_test.go
-│   ├── aws/            # AWS関連（実装済み）
-│   │   ├── client.go   # S3クライアント管理
-│   │   ├── operations.go # S3操作ヘルパー
-│   │   ├── multipart.go  # マルチパートアップロード（NEW!）
-│   │   └── multipart_parallel.go # 並列マルチパート（NEW!）
-│   ├── uploader/       # アップロード処理（実装済み）
-│   │   ├── uploader.go # 基本的なアップロード機能
-│   │   ├── retry.go    # リトライ機能
-│   │   ├── task_runner.go # タスクランナー
-│   │   ├── parallel.go # 並列アップロード機能
-│   │   └── helpers.go  # ヘルパー関数
-│   └── progress/       # 進捗管理（実装済み）
-│       └── progress.go # 進捗追跡と表示
-├── pkg/                # 外部パッケージ（ライブラリとして利用可能）
+├── go.sum              # 依存関係のチェックサム
+├── main.go             # メインエントリーポイント（s3-uploader）
 ├── config.json         # 設定ファイル
-├── logs/               # ログ出力ディレクトリ
-└── test_fileutils.sh   # ファイルスキャンテスト実行スクリプト
+├── cmd/                # 個別ツール（開発・デバッグ用）
+│   ├── task-runner/    # タスクランナー単体（main.goと同等機能）
+│   ├── scan-test/      # ファイルスキャンテスト
+│   ├── client-test/    # S3クライアントテスト
+│   ├── upload-test/    # アップロードテスト
+│   ├── parallel-test/  # 並列アップロードテスト
+│   └── multipart-test/ # マルチパートアップロードテスト
+├── internal/           # 内部パッケージ
+│   ├── models/         # 設定管理
+│   ├── logger/         # ログ管理
+│   ├── version/        # バージョン情報
+│   ├── fileutils/      # ファイルスキャン
+│   ├── aws/            # AWS/S3関連
+│   ├── uploader/       # アップロード処理
+│   └── progress/       # 進捗管理
+├── scripts/            # テスト・ユーティリティスクリプト
+└── bin/                # ビルド成果物（.gitignore）
+    └── s3-uploader     # メインバイナリ（シングルバイナリ）
 ```
+
+**注**: `s3-uploader`バイナリ1つで全機能が利用可能です。`cmd/`配下のツールは開発・デバッグ用の個別機能です。
 
 ## 開発の進め方
 
