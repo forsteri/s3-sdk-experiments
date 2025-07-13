@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"s3-uploader/internal/logger"
+	"s3-uploader/internal/models"
 )
 
 func main() {
@@ -25,10 +26,14 @@ func main() {
 	}
 
 	// デバッグ用の簡易ロガー設定
-	logger.Setup(logger.Config{
+	_, err := logger.Setup(models.LoggingConfig{
 		Level:  "DEBUG",
 		Format: "%(asctime)s - %(levelname)s - %(message)s",
 	})
+	if err != nil {
+		fmt.Printf("Logger setup failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	lgr := logger.GetLogger()
 

@@ -1,7 +1,6 @@
 #!/bin/bash
+set -euo pipefail
 # S3 Uploader 統合テストスクリプト
-
-set -e  # エラーが発生したら停止
 
 echo "=== S3 Uploader Integration Test ==="
 echo ""

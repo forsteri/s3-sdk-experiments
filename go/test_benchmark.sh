@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # ベンチマークディレクトリを使った包括的なテストスクリプト
 
@@ -43,7 +44,7 @@ log_result "1. Small Files Directory Upload"
 log_result "Directory: benchmark/small (Total: 704KB)"
 echo ""
 
-cd "$GO_DIR"
+cd "$GO_DIR" || exit 1
 
 # 順次アップロード
 echo -e "${YELLOW}Sequential upload:${NC}"

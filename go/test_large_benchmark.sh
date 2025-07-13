@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -euo pipefail
 # 大容量ファイルでのベンチマークテスト
 
 GREEN='\033[0;32m'
