@@ -11,16 +11,29 @@ import (
 	"s3-uploader/internal/logger"
 	"s3-uploader/internal/models"
 	"s3-uploader/internal/uploader"
+	"s3-uploader/internal/version"
 )
 
 func main() {
 	// コマンドライン引数
 	var (
-		configFile = flag.String("config", "config.json", "設定ファイルのパス")
-		dryRun     = flag.Bool("dry-run", false, "ドライランモード")
-		testMode   = flag.Bool("test", false, "テストモード（単一ファイルアップロードのテスト）")
+		configFile  = flag.String("config", "config.json", "設定ファイルのパス")
+		dryRun      = flag.Bool("dry-run", false, "ドライランモード")
+		testMode    = flag.Bool("test", false, "テストモード（単一ファイルアップロードのテスト）")
+		showVersion = flag.Bool("version", false, "バージョン情報を表示")
+		versionShort = flag.Bool("v", false, "バージョン情報を表示（短縮版）")
 	)
 	flag.Parse()
+
+	// バージョン情報の表示
+	if *showVersion {
+		fmt.Println(version.String())
+		os.Exit(0)
+	}
+	if *versionShort {
+		fmt.Println(version.Short())
+		os.Exit(0)
+	}
 
 	fmt.Println("🚀 S3 Uploader - Go version")
 	fmt.Println("========================================")
