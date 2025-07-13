@@ -5,6 +5,28 @@ target/
 *.pyc
 __pycache__/
 
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.html
+coverage.out
+vendor/
+go.work
+
+# Python specific
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+uv.lock
+
 # IDE
 .vscode/
 .idea/
