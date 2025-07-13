@@ -6,6 +6,8 @@ Python版のS3 UploaderをGoで再実装したプロジェクトです。
 
 - 📁 単一ファイル/ディレクトリの S3 アップロード
 - 🚀 並列アップロード機能（ワーカープール方式）
+- 📦 マルチパートアップロード（大容量ファイル対応）
+- ⚡ 並列マルチパートアップロード（高速転送）
 - 🔄 自動リトライ機能（指数バックオフ）
 - 📊 進捗表示機能（ログ出力対応）
 - 🏃 ドライランモード
@@ -29,7 +31,9 @@ go/
 │   │   └── main.go
 │   ├── upload-test/    # アップロードテスト
 │   │   └── main.go
-│   └── parallel-test/  # 並列アップロードテスト（NEW!）
+│   ├── parallel-test/  # 並列アップロードテスト
+│   │   └── main.go
+│   └── multipart-test/ # マルチパートアップロードテスト（NEW!）
 │       └── main.go
 ├── internal/           # 内部パッケージ（外部から使用不可）
 │   ├── models/         # 設定管理（実装済み）
@@ -42,7 +46,9 @@ go/
 │   │   └── scanner_bench_test.go
 │   ├── aws/            # AWS関連（実装済み）
 │   │   ├── client.go   # S3クライアント管理
-│   │   └── operations.go # S3操作ヘルパー
+│   │   ├── operations.go # S3操作ヘルパー
+│   │   ├── multipart.go  # マルチパートアップロード（NEW!）
+│   │   └── multipart_parallel.go # 並列マルチパート（NEW!）
 │   ├── uploader/       # アップロード処理（実装済み）
 │   │   ├── uploader.go # 基本的なアップロード機能
 │   │   ├── retry.go    # リトライ機能
@@ -115,6 +121,16 @@ go/
 - ドライランモード対応
 - 失敗時の適切な終了コード
 - 並列アップロードに対応
+
+### マルチパートアップロード機能 (internal/aws/multipart.go, multipart_parallel.go)
+- 大容量ファイルの効率的なアップロード（デフォルト: 100MB以上）
+- ファイルを複数のパートに分割して並列転送
+- 設定可能なチャンクサイズ（config.jsonのmultipart_chunksize）
+- 順次・並列マルチパートアップロードの両方をサポート
+- エラー時の自動クリーンアップ（AbortMultipartUpload）
+- アップロード中の進捗追跡
+- ワーカープール方式による効率的な並列処理
+- ReadAt を使用したスレッドセーフなファイル読み込み
 
 ### 使用方法
 
@@ -194,6 +210,27 @@ go/
    ./test_progress.sh
    ```
 
+9. **マルチパートアップロードのテスト実行**:
+   ```bash
+   # 大容量ファイルをマルチパートでアップロード
+   go run cmd/multipart-test/main.go -source bigfile.zip -bucket your-bucket -key test/bigfile.zip
+   
+   # 強制的にマルチパートアップロードを使用（小さいファイルでも）
+   go run cmd/multipart-test/main.go -source file.txt -bucket your-bucket -key test/file.txt -multipart
+   
+   # 並列マルチパートアップロード（ワーカー数指定）
+   go run cmd/multipart-test/main.go -source bigfile.zip -bucket your-bucket -key test/bigfile.zip -workers 8
+   
+   # チャンクサイズを指定（MB単位）
+   go run cmd/multipart-test/main.go -source bigfile.zip -bucket your-bucket -key test/bigfile.zip -chunk-size 10
+   
+   # ベンチマークモード（通常 vs 順次マルチパート vs 並列マルチパートの比較）
+   go run cmd/multipart-test/main.go -source bigfile.zip -bucket your-bucket -key test/bigfile -benchmark
+   
+   # ドライランモード
+   go run cmd/multipart-test/main.go -source bigfile.zip -bucket your-bucket -key test/bigfile.zip -dry-run
+   ```
+
 ## 並列アップロードの特徴
 
 - **自動最適化**: ファイル数が少ない場合は順次処理、多い場合は並列処理を自動選択
@@ -254,7 +291,8 @@ go/
 
 すべての主要機能が実装されました！✨
 今後の拡張案：
-- マルチパートアップロード対応（大容量ファイル向け）
+- ✅ マルチパートアップロード対応（大容量ファイル向け）→ 実装済み！
 - メトリクス出力（Prometheus形式）
 - Slack/Email通知機能
 - 差分アップロード機能
+- ストリーミングアップロード（ファイルをメモリに読み込まずに転送）

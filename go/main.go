@@ -59,12 +59,12 @@ func main() {
 
 	if *testMode {
 		// テストモード：単一ファイルアップロードのテスト
-		testBucket := "datalake-poc-raw-891376985958"
+		testBucket := "s3-experiment-bucket-250615"
 		testFile := "../test-data/sample_data.csv"
 		key := "test-upload/sample_data.csv"
 
 		lgr.Info("Running in test mode")
-		
+
 		// 接続テスト
 		lgr.Info("Testing S3 connection...", "bucket", testBucket)
 		if err := clientManager.TestConnection(ctx, testBucket); err != nil {
@@ -102,7 +102,7 @@ func main() {
 	} else {
 		// 通常モード：タスクランナーを実行
 		lgr.Info("Starting task runner mode")
-		
+
 		// タスクランナーを作成
 		runner := uploader.NewTaskRunner(clientManager, *cfg)
 

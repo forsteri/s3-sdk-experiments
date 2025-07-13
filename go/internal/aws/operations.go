@@ -19,6 +19,8 @@ type S3Operations interface {
 	UploadFileWithMetadata(ctx context.Context, bucket, key, filePath string, metadata map[string]string) error
 	ListObjects(ctx context.Context, bucket, prefix string) ([]types.Object, error)
 	ObjectExists(ctx context.Context, bucket, key string) (bool, error)
+	UploadFileMultipart(ctx context.Context, bucket, key, filePath string, chunkSize int64, metadata map[string]string) error
+	UploadFileMultipartParallel(ctx context.Context, bucket, key, filePath string, chunkSize int64, numWorkers int, metadata map[string]string) error
 }
 
 // Ensure ClientManager implements S3Operations
