@@ -75,7 +75,51 @@ func (u *Uploader) UploadFile(ctx context.Context, filePath string, bucket strin
 		}, nil
 	}
 
-	// ファイルをアップロード
+	// マルチパートアップロードの闾値をチェック
+	if fileInfo.Size >= u.uploadConfig.MultipartThreshold {
+		u.logger.Info("File size exceeds multipart threshold, using multipart upload",
+			"file", filePath,
+			"size", fileInfo.Size,
+			"threshold", u.uploadConfig.MultipartThreshold,
+		)
+		
+		// 並列アップロードが有効な場合
+		if u.uploadConfig.ParallelUploads > 1 {
+			err = u.client.UploadFileMultipartParallel(ctx, bucket, key, filePath, 
+				u.uploadConfig.MultipartChunksize, u.uploadConfig.ParallelUploads, nil)
+		} else {
+			err = u.client.UploadFileMultipart(ctx, bucket, key, filePath, 
+				u.uploadConfig.MultipartChunksize, nil)
+		}
+		
+		if err != nil {
+			return &UploadResult{
+				Source:  filePath,
+				Bucket:  bucket,
+				Key:     key,
+				Size:    fileInfo.Size,
+				Success: false,
+				Error:   err,
+			}, err
+		}
+		
+		u.logger.Info("Multipart upload completed successfully",
+			"source", filePath,
+			"bucket", bucket,
+			"key", key,
+			"size", fileInfo.Size,
+		)
+		
+		return &UploadResult{
+			Source:  filePath,
+			Bucket:  bucket,
+			Key:     key,
+			Size:    fileInfo.Size,
+			Success: true,
+		}, nil
+	}
+
+	// 通常のアップロード
 	u.logger.Debug("Uploading file",
 		"source", filePath,
 		"bucket", bucket,
