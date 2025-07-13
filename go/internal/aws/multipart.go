@@ -40,7 +40,7 @@ func (cm *ClientManager) CreateMultipartUpload(ctx context.Context, bucket, key,
 		ContentType: aws.String(contentType),
 	}
 
-	if metadata != nil && len(metadata) > 0 {
+	if len(metadata) > 0 {
 		input.Metadata = metadata
 	}
 
