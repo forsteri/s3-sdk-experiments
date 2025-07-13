@@ -13,7 +13,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # プロジェクトディレクトリ
-PROJECT_DIR="/Users/forsteri/work/Projects/s3-sdk-experiments"
+PROJECT_DIR="$(git -C "$(dirname "${BASH_SOURCE[0]}")/.." rev-parse --show-toplevel 2>/dev/null || cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GO_DIR="$PROJECT_DIR/go"
 TEST_DATA_DIR="$PROJECT_DIR/test-data/benchmark"
 RESULTS_FILE="$GO_DIR/benchmark_results.txt"

@@ -28,7 +28,7 @@ echo -e "${GREEN}1. Testing normal upload with small file...${NC}"
 echo "File: sample_data.csv (72 bytes)"
 echo ""
 
-cd "$GO_DIR"
+cd "$GO_DIR" || exit 1
 go run cmd/upload-test/main.go \
     -source "$TEST_DATA_DIR/sample_data.csv" \
     -key "test/normal-upload/sample.csv" \
@@ -56,7 +56,7 @@ echo "File: $FILE_NAME ($FILE_SIZE)"
 echo ""
 
 # 強制的にマルチパートアップロードを使用（チャンクサイズ 5MB）
-cd "$GO_DIR"
+cd "$GO_DIR" || exit 1
 go run cmd/multipart-test/main.go \
     -source "$MEDIUM_FILE" \
     -bucket "$BUCKET" \
@@ -129,7 +129,7 @@ fi
 echo "File: test-150mb.bin (150MB)"
 echo ""
 
-cd "$GO_DIR"
+cd "$GO_DIR" || exit 1
 go run cmd/multipart-test/main.go \
     -source "$LARGE_TEST_FILE" \
     -bucket "$BUCKET" \

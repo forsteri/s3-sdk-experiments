@@ -36,7 +36,7 @@ run_test() {
 # 1. 依存関係のチェック
 echo "1. Checking dependencies..."
 run_test "Go installation" "go version"
-run_test "AWS credentials" "test -f ~/.aws/credentials || test -n '$AWS_PROFILE'"
+run_test "AWS credentials" "test -f ~/.aws/credentials || test -n \"$AWS_PROFILE\""
 
 # 2. ビルドテスト
 echo -e "\n2. Build tests..."
