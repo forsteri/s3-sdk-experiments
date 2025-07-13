@@ -16,7 +16,9 @@ go/
 │   │   └── main.go
 │   ├── client-test/    # S3クライアントテスト
 │   │   └── main.go
-│   └── upload-test/    # アップロードテスト
+│   ├── upload-test/    # アップロードテスト
+│   │   └── main.go
+│   └── parallel-test/  # 並列アップロードテスト（NEW!）
 │       └── main.go
 ├── internal/           # 内部パッケージ（外部から使用不可）
 │   ├── models/         # 設定管理（実装済み）
@@ -33,7 +35,9 @@ go/
 │   ├── uploader/       # アップロード処理（実装済み）
 │   │   ├── uploader.go # 基本的なアップロード機能
 │   │   ├── retry.go    # リトライ機能
-│   │   └── task_runner.go # タスクランナー
+│   │   ├── task_runner.go # タスクランナー
+│   │   ├── parallel.go # 並列アップロード機能（NEW!）
+│   │   └── helpers.go  # ヘルパー関数（NEW!）
 │   └── progress/       # 進捗管理（未実装）
 ├── pkg/                # 外部パッケージ（ライブラリとして利用可能）
 ├── config.json         # 設定ファイル
@@ -46,9 +50,9 @@ go/
 1. **設定管理**: JSONファイルの読み込みと構造体へのマッピング ✅
 2. **AWS接続**: SDK v2を使ったS3クライアントの作成 ✅
 3. **ファイル操作**: ファイルスキャンとアップロード準備 ✅
-4. **並列処理**: goroutinesを使った並列アップロード 🚧
+4. **並列処理**: goroutinesを使った並列アップロード ✅（NEW!）
 5. **進捗表示**: リアルタイム進捗管理 🚧
-6. **エラーハンドリング**: リトライとログ出力 🚧
+6. **エラーハンドリング**: リトライとログ出力 ✅
 
 ## 実装済み機能
 
@@ -75,12 +79,21 @@ go/
 - 除外パターンの適用
 - 詳細なアップロード結果レポート
 
+### 並列アップロード機能 (internal/uploader/parallel.go) 🆕
+- ワーカープール方式による効率的な並列処理
+- 設定可能なワーカー数（config.jsonのparallel_uploads）
+- ファイル数に応じた自動的な並列/順次処理の切り替え
+- 各ワーカーが独立してリトライ処理を実行
+- リアルタイムの統計情報追跡（アップロード数、失敗数、総バイト数）
+- コンテキストによる適切なキャンセル処理
+
 ### タスクランナー機能 (internal/uploader/task_runner.go)
 - config.jsonのupload_tasksを自動実行
 - 個別タスクの実行もサポート
 - 実行結果の詳細レポート
 - ドライランモード対応
 - 失敗時の適切な終了コード
+- 並列アップロードに対応
 
 ### 使用方法
 
@@ -138,10 +151,32 @@ go/
    go run cmd/upload-test/main.go -source ../test-data -dry-run -recursive
    ```
 
+7. **並列アップロードのテスト実行** 🆕:
+   ```bash
+   # ディレクトリを並列アップロード（デフォルト: 3ワーカー）
+   go run cmd/parallel-test/main.go -source ../test-data -recursive
+   
+   # ワーカー数を指定
+   go run cmd/parallel-test/main.go -source ../test-data -recursive -workers 8
+   
+   # 順次処理でアップロード（比較用）
+   go run cmd/parallel-test/main.go -source ../test-data -recursive -parallel=false
+   
+   # ベンチマークモード（並列 vs 順次の性能比較）
+   go run cmd/parallel-test/main.go -benchmark ../test-data
+   ```
+
+## 並列アップロードの特徴
+
+- **自動最適化**: ファイル数が少ない場合は順次処理、多い場合は並列処理を自動選択
+- **効率的なリソース管理**: ワーカープール方式でgoroutineを効率的に管理
+- **リトライ対応**: 各ワーカーが独立してリトライ処理を実行
+- **進捗追跡**: atomic操作でリアルタイムに進捗を追跡
+- **ベンチマーク機能**: 異なるワーカー数での性能比較が可能
+
 ## 次のステップ
 
-基本的なアップローダー機能は完成しました！
-残りは高機能化の実装：
-- 並列アップロード機能 (goroutines + worker pool)
-- 進捗表示機能 (internal/progress)
+並列アップロード機能が実装されました！✨
+残りの実装項目：
+- 進捗表示機能 (internal/progress) - リアルタイムの進捗バー表示
 - マルチパートアップロード対応（大容量ファイル向け）
