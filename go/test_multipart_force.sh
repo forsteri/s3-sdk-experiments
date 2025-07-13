@@ -20,7 +20,10 @@ BUCKET="s3-experiment-bucket-250615"
 echo -e "${BLUE}=== Multipart Upload Function Test ===${NC}"
 echo ""
 
-cd "$GO_DIR"
+cd "$GO_DIR" || { 
+    echo -e "${RED}Error: Cannot change to directory $GO_DIR${NC}"
+    exit 1
+    }
 
 # 1. 強制マルチパートアップロード（小さいファイルでも動作確認）
 echo -e "${GREEN}1. Force multipart upload on medium file${NC}"

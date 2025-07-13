@@ -89,10 +89,7 @@ basic_test() {
 benchmark() {
     echo -e "${GREEN}Running benchmark tests...${NC}"
     
-    if [ ! -f "$TEST_DIR/test-500mb.bin" ]; then
-        echo "Creating 500MB test file for benchmark..."
-        dd if=/dev/zero of="$TEST_DIR/test-500mb.bin" bs=1M count=500 2>/dev/null
-    fi
+    create_test_files
     
     go run cmd/multipart-test/main.go \
         -source "$TEST_DIR/test-500mb.bin" \

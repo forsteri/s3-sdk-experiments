@@ -17,13 +17,13 @@ import (
 
 // ParallelMultipartUploader 並列マルチパートアップロードを管理する構造体
 type ParallelMultipartUploader struct {
-	manager      *MultipartUploadManager
-	numWorkers   int
-	chunkSize    int64
-	file         *os.File
-	fileSize     int64
-	workerWg     sync.WaitGroup
-	progressBar  *progress.ProgressTracker
+	manager     *MultipartUploadManager
+	numWorkers  int
+	chunkSize   int64
+	file        *os.File
+	fileSize    int64
+	workerWg    sync.WaitGroup
+	progressBar *progress.ProgressTracker
 }
 
 // PartJob 各ワーカーが処理するジョブ
@@ -46,19 +46,23 @@ func NewParallelMultipartUploader(manager *MultipartUploadManager, file *os.File
 
 // Upload 並列でマルチパートアップロードを実行
 func (pmu *ParallelMultipartUploader) Upload(ctx context.Context) error {
+	// キャンセル可能なコンテキストを作成
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// パート数を計算
 	totalParts := (pmu.fileSize + pmu.chunkSize - 1) / pmu.chunkSize
-	
+
 	// ジョブキューを作成
 	jobQueue := make(chan PartJob, totalParts)
 	errChan := make(chan error, pmu.numWorkers)
-	
+
 	// ワーカーを起動
 	for i := 0; i < pmu.numWorkers; i++ {
 		pmu.workerWg.Add(1)
 		go pmu.worker(ctx, i, jobQueue, errChan)
 	}
-	
+
 	// ジョブを生成
 	var offset int64
 	var partNumber int32
@@ -67,40 +71,41 @@ func (pmu *ParallelMultipartUploader) Upload(ctx context.Context) error {
 		if offset+partSize > pmu.fileSize {
 			partSize = pmu.fileSize - offset
 		}
-		
+
 		partNumber++
 		jobQueue <- PartJob{
 			PartNumber: partNumber,
 			Offset:     offset,
 			Size:       partSize,
 		}
-		
+
 		offset += partSize
 	}
 	close(jobQueue)
-	
+
 	// ワーカーの完了を待つ
 	go func() {
 		pmu.workerWg.Wait()
 		close(errChan)
 	}()
-	
+
 	// エラーをチェック
 	for err := range errChan {
 		if err != nil {
+			cancel() // エラーが発生したらキャンセル
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
 // worker アップロードワーカー
 func (pmu *ParallelMultipartUploader) worker(ctx context.Context, workerID int, jobs <-chan PartJob, errChan chan<- error) {
 	defer pmu.workerWg.Done()
-	
+
 	pmu.manager.client.logger.Debug("Multipart worker started", "worker_id", workerID)
-	
+
 	for job := range jobs {
 		select {
 		case <-ctx.Done():
@@ -108,10 +113,10 @@ func (pmu *ParallelMultipartUploader) worker(ctx context.Context, workerID int, 
 			return
 		default:
 		}
-		
+
 		// ファイルの読み込み用バッファを作成
 		buffer := make([]byte, job.Size)
-		
+
 		// ファイルからデータを読み込む（スレッドセーフ）
 		n, err := pmu.file.ReadAt(buffer, job.Offset)
 		if err != nil && err != io.EOF {
@@ -122,7 +127,7 @@ func (pmu *ParallelMultipartUploader) worker(ctx context.Context, workerID int, 
 			errChan <- fmt.Errorf("worker %d: read size mismatch: expected %d, got %d", workerID, job.Size, n)
 			return
 		}
-		
+
 		// パートをアップロード
 		reader := bytes.NewReader(buffer[:n])
 		result, err := pmu.manager.UploadPartWithNumber(ctx, reader, job.Size, job.PartNumber)
@@ -130,20 +135,20 @@ func (pmu *ParallelMultipartUploader) worker(ctx context.Context, workerID int, 
 			errChan <- fmt.Errorf("worker %d: %w", workerID, err)
 			return
 		}
-		
+
 		pmu.manager.client.logger.Debug("Worker uploaded part",
 			"worker_id", workerID,
 			"part_number", result.PartNumber,
 			"offset", job.Offset,
 			"size", job.Size,
 		)
-		
+
 		// 進捗を更新（プログレストラッカーが設定されている場合）
 		if pmu.progressBar != nil {
 			pmu.progressBar.IncrementProcessed(job.Size)
 		}
 	}
-	
+
 	pmu.manager.client.logger.Debug("Multipart worker finished", "worker_id", workerID)
 }
 
@@ -202,7 +207,7 @@ func (cm *ClientManager) UploadFileMultipartParallel(ctx context.Context, bucket
 	}
 
 	fileSize := fileInfo.Size()
-	
+
 	// Content-Typeを推測
 	contentType := cm.guessContentType(filePath)
 
@@ -232,7 +237,7 @@ func (cm *ClientManager) UploadFileMultipartParallel(ctx context.Context, bucket
 
 	// 並列アップローダーを作成
 	parallelUploader := NewParallelMultipartUploader(mum, file, fileSize, chunkSize, numWorkers)
-	
+
 	// アップロードを実行
 	if err := parallelUploader.Upload(ctx); err != nil {
 		uploadErr = err
