@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"s3-uploader/internal/logger"
+	"s3-uploader/internal/progress"
 )
 
 // UploadJob アップロードジョブを表す構造体
@@ -32,6 +33,8 @@ type ParallelUploader struct {
 	failedCount   atomic.Int64
 	totalBytes    atomic.Int64
 	stopped       atomic.Bool
+	tracker       *progress.ProgressTracker // 進捗追跡
+	display       *progress.ProgressDisplay  // 進捗表示
 }
 
 // NewParallelUploader 新しいParallelUploaderを作成
@@ -111,8 +114,18 @@ func (pu *ParallelUploader) worker(id int) {
 			"file", job.FilePath,
 		)
 
+		// ワーカーの状態を更新（トラッカーが設定されている場合）
+		if pu.tracker != nil {
+			pu.tracker.UpdateWorkerStatus(id, job.FilePath)
+		}
+
 		startTime := time.Now()
 		result, err := pu.uploader.UploadFileWithRetry(pu.ctx, job.FilePath, job.Bucket, job.Key)
+
+		// ワーカーの状態をクリア（トラッカーが設定されている場合）
+		if pu.tracker != nil {
+			pu.tracker.UpdateWorkerStatus(id, "")
+		}
 
 		if err != nil {
 			pu.logger.Error("Worker upload failed",
@@ -181,8 +194,28 @@ func (u *Uploader) UploadDirectoryParallel(ctx context.Context, dirPath string, 
 		"workers", u.uploadConfig.ParallelUploads,
 	)
 
+	// 総バイト数を計算
+	var totalBytes int64
+	for _, fileInfo := range files {
+		totalBytes += fileInfo.Size
+	}
+
+	// 進捗トラッカーを作成
+	tracker := progress.NewProgressTracker(len(files), totalBytes)
+	display := progress.NewProgressDisplay(tracker,
+		progress.WithLogger(u.logger),
+	)
+
+	// 進捗表示を有効にする場合は開始
+	if u.uploadConfig.EnableProgress {
+		display.Start()
+		defer display.Stop()
+	}
+
 	// 並列アップローダーを作成
 	parallelUploader := NewParallelUploader(u, u.uploadConfig.ParallelUploads)
+	parallelUploader.tracker = tracker
+	parallelUploader.display = display
 	parallelUploader.Start()
 
 	// 結果を収集するゴルーチン
@@ -193,6 +226,19 @@ func (u *Uploader) UploadDirectoryParallel(ctx context.Context, dirPath string, 
 		var collectedResults []UploadResult
 		for result := range parallelUploader.GetResults() {
 			collectedResults = append(collectedResults, result)
+			
+			// 進捗を更新（トラッカーが設定されている場合）
+			if parallelUploader.tracker != nil {
+				if result.Success {
+					if result.SkippedReason != "" {
+						parallelUploader.tracker.IncrementSkipped()
+					} else {
+						parallelUploader.tracker.IncrementProcessed(result.Size)
+					}
+				} else {
+					parallelUploader.tracker.IncrementFailed()
+				}
+			}
 		}
 		resultChan <- collectedResults
 	}()
@@ -256,6 +302,19 @@ func (u *Uploader) UploadFilesParallel(ctx context.Context, uploadJobs []UploadJ
 		var collectedResults []UploadResult
 		for result := range parallelUploader.GetResults() {
 			collectedResults = append(collectedResults, result)
+			
+			// 進捗を更新（トラッカーが設定されている場合）
+			if parallelUploader.tracker != nil {
+				if result.Success {
+					if result.SkippedReason != "" {
+						parallelUploader.tracker.IncrementSkipped()
+					} else {
+						parallelUploader.tracker.IncrementProcessed(result.Size)
+					}
+				} else {
+					parallelUploader.tracker.IncrementFailed()
+				}
+			}
 		}
 		resultChan <- collectedResults
 	}()

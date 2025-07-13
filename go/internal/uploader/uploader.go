@@ -113,6 +113,12 @@ func (u *Uploader) UploadFile(ctx context.Context, filePath string, bucket strin
 
 // UploadDirectory ディレクトリ内のファイルをS3にアップロード
 func (u *Uploader) UploadDirectory(ctx context.Context, dirPath string, bucket string, keyPrefix string, recursive bool) ([]UploadResult, error) {
+	// 並列アップロードが有効かつワーカー数が2以上の場合は並列処理を使用
+	if u.uploadConfig.ParallelUploads > 1 {
+		return u.UploadDirectoryParallel(ctx, dirPath, bucket, keyPrefix, recursive)
+	}
+
+	// 以下は順次処理
 	// ディレクトリをスキャン
 	files, err := u.scanner.ScanDirectory(dirPath, recursive)
 	if err != nil {
