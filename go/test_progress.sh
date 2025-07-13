@@ -18,3 +18,4 @@ echo -e "\n3. Running benchmark (sequential vs parallel)..."
 go run cmd/parallel-test/main.go -benchmark ../test-data
 
 echo -e "\n✅ All tests completed!"
+

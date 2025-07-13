@@ -19,17 +19,17 @@ const (
 
 // ProgressTracker アップロードの進捗を追跡する構造体
 type ProgressTracker struct {
-	mu              sync.RWMutex
-	totalFiles      int64
-	processedFiles  atomic.Int64
-	failedFiles     atomic.Int64
-	skippedFiles    atomic.Int64
-	totalBytes      int64
-	processedBytes  atomic.Int64
-	startTime       time.Time
-	activeWorkers   map[int]string // worker ID -> current file
-	lastUpdateTime  time.Time
-	updateInterval  time.Duration
+	mu             sync.RWMutex
+	totalFiles     int64
+	processedFiles atomic.Int64
+	failedFiles    atomic.Int64
+	skippedFiles   atomic.Int64
+	totalBytes     int64
+	processedBytes atomic.Int64
+	startTime      time.Time
+	activeWorkers  map[int]string // worker ID -> current file
+	lastUpdateTime time.Time
+	updateInterval time.Duration
 }
 
 // NewProgressTracker 新しいProgressTrackerを作成
@@ -48,7 +48,7 @@ func NewProgressTracker(totalFiles int, totalBytes int64) *ProgressTracker {
 func (pt *ProgressTracker) UpdateWorkerStatus(workerID int, fileName string) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
-	
+
 	if fileName == "" {
 		delete(pt.activeWorkers, workerID)
 	} else {
@@ -76,7 +76,7 @@ func (pt *ProgressTracker) IncrementSkipped() {
 func (pt *ProgressTracker) ShouldUpdate() bool {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
-	
+
 	return time.Since(pt.lastUpdateTime) >= pt.updateInterval
 }
 
@@ -86,17 +86,17 @@ func (pt *ProgressTracker) GetProgressBar(width int) string {
 	failed := pt.failedFiles.Load()
 	skipped := pt.skippedFiles.Load()
 	completed := processed + failed + skipped
-	
+
 	if pt.totalFiles == 0 {
 		return ""
 	}
-	
+
 	percentage := float64(completed) / float64(pt.totalFiles) * 100
 	filled := int(float64(width) * percentage / 100)
-	
+
 	bar := strings.Builder{}
 	bar.WriteByte('[')
-	
+
 	for i := 0; i < width; i++ {
 		if i < filled {
 			bar.WriteByte('=')
@@ -106,9 +106,9 @@ func (pt *ProgressTracker) GetProgressBar(width int) string {
 			bar.WriteByte(' ')
 		}
 	}
-	
+
 	bar.WriteByte(']')
-	
+
 	return fmt.Sprintf("%s %.1f%%", bar.String(), percentage)
 }
 
@@ -118,20 +118,20 @@ func (pt *ProgressTracker) GetStats() Stats {
 	failed := pt.failedFiles.Load()
 	skipped := pt.skippedFiles.Load()
 	processedBytes := pt.processedBytes.Load()
-	
+
 	elapsed := time.Since(pt.startTime)
 	var speed float64
 	if elapsed.Seconds() > 0 {
 		speed = float64(processedBytes) / elapsed.Seconds()
 	}
-	
+
 	// 残り時間の推定
 	completed := processed + failed + skipped
 	if completed > 0 && pt.totalFiles > 0 {
 		avgTimePerFile := elapsed / time.Duration(completed)
 		remainingFiles := pt.totalFiles - completed
 		eta := avgTimePerFile * time.Duration(remainingFiles)
-		
+
 		return Stats{
 			TotalFiles:     pt.totalFiles,
 			ProcessedFiles: processed,
@@ -144,7 +144,7 @@ func (pt *ProgressTracker) GetStats() Stats {
 			ETA:            eta,
 		}
 	}
-	
+
 	return Stats{
 		TotalFiles:     pt.totalFiles,
 		ProcessedFiles: processed,
@@ -162,7 +162,7 @@ func (pt *ProgressTracker) GetStats() Stats {
 func (pt *ProgressTracker) GetActiveWorkers() map[int]string {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
-	
+
 	// マップのコピーを返す
 	workers := make(map[int]string)
 	for k, v := range pt.activeWorkers {
@@ -222,12 +222,12 @@ func WithLogInterval(interval time.Duration) DisplayOption {
 
 // ProgressDisplay プログレス表示を管理
 type ProgressDisplay struct {
-	tracker      *ProgressTracker
-	stop         chan struct{}
-	wg           sync.WaitGroup
-	mode         DisplayMode
-	logger       Logger // ログ出力用のインターフェース
-	logInterval  time.Duration
+	tracker     *ProgressTracker
+	stop        chan struct{}
+	wg          sync.WaitGroup
+	mode        DisplayMode
+	logger      Logger // ログ出力用のインターフェース
+	logInterval time.Duration
 }
 
 // NewProgressDisplay 新しいProgressDisplayを作成
@@ -235,14 +235,14 @@ func NewProgressDisplay(tracker *ProgressTracker, opts ...DisplayOption) *Progre
 	pd := &ProgressDisplay{
 		tracker:     tracker,
 		stop:        make(chan struct{}),
-		mode:        DisplayModeLog, // デフォルトはログモード（サーバー環境向け）
+		mode:        DisplayModeLog,   // デフォルトはログモード（サーバー環境向け）
 		logInterval: 30 * time.Second, // デフォルトは30秒間隔（サーバー向けに長めに）
 	}
-	
+
 	for _, opt := range opts {
 		opt(pd)
 	}
-	
+
 	return pd
 }
 
@@ -256,7 +256,7 @@ func (pd *ProgressDisplay) Start() {
 func (pd *ProgressDisplay) Stop() {
 	close(pd.stop)
 	pd.wg.Wait()
-	
+
 	// 最終状態を表示
 	switch pd.mode {
 	case DisplayModeTerminal:
@@ -270,7 +270,7 @@ func (pd *ProgressDisplay) Stop() {
 // displayLoop 表示ループ
 func (pd *ProgressDisplay) displayLoop() {
 	defer pd.wg.Done()
-	
+
 	var ticker *time.Ticker
 	switch pd.mode {
 	case DisplayModeTerminal:
@@ -281,7 +281,7 @@ func (pd *ProgressDisplay) displayLoop() {
 		return // 何も表示しない
 	}
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-pd.stop:
@@ -304,14 +304,14 @@ func (pd *ProgressDisplay) displayLoop() {
 func (pd *ProgressDisplay) displayProgress() {
 	stats := pd.tracker.GetStats()
 	workers := pd.tracker.GetActiveWorkers()
-	
+
 	// カーソルを行頭に移動してクリア
 	fmt.Print("\r\033[K")
-	
+
 	// プログレスバーを表示
 	bar := pd.tracker.GetProgressBar(40)
 	fmt.Printf("%s ", bar)
-	
+
 	// 統計情報を表示
 	fmt.Printf("[%d/%d files, %s, %s/s",
 		stats.ProcessedFiles+stats.FailedFiles+stats.SkippedFiles,
@@ -319,14 +319,14 @@ func (pd *ProgressDisplay) displayProgress() {
 		formatBytes(stats.ProcessedBytes),
 		formatBytes(int64(stats.Speed)),
 	)
-	
+
 	// ETAを表示
 	if stats.ETA > 0 {
 		fmt.Printf(", ETA: %s", formatDuration(stats.ETA))
 	}
-	
+
 	fmt.Print("]")
-	
+
 	// アクティブワーカー数を表示
 	if len(workers) > 0 {
 		fmt.Printf(" [%d workers active]", len(workers))
@@ -338,10 +338,14 @@ func (pd *ProgressDisplay) logProgress() {
 	if pd.logger == nil {
 		return
 	}
-	
+
 	stats := pd.tracker.GetStats()
 	completed := stats.ProcessedFiles + stats.FailedFiles + stats.SkippedFiles
-	
+	var percentage float64
+	if stats.TotalFiles > 0 {
+		percentage = float64(completed) / float64(stats.TotalFiles) * 100
+	}
+
 	pd.logger.Info("Upload progress",
 		"completed", completed,
 		"total", stats.TotalFiles,
@@ -352,7 +356,7 @@ func (pd *ProgressDisplay) logProgress() {
 		"speed_mbps", fmt.Sprintf("%.2f", stats.Speed/1024/1024),
 		"elapsed", formatDuration(stats.Elapsed),
 		"eta", formatDuration(stats.ETA),
-		"percentage", fmt.Sprintf("%.1f%%", float64(completed)/float64(stats.TotalFiles)*100),
+		"percentage", fmt.Sprintf("%.1f%%", percentage),
 	)
 }
 
@@ -363,7 +367,7 @@ func formatBytes(bytes int64) string {
 		MB = KB * 1024
 		GB = MB * 1024
 	)
-	
+
 	switch {
 	case bytes >= GB:
 		return fmt.Sprintf("%.2f GB", float64(bytes)/GB)

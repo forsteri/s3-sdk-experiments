@@ -216,7 +216,7 @@ go/
 ```
 
 ### 進捗ログの出力例
-```
+``` text
 2024-03-15 10:30:00 - INFO - Upload progress - completed=150 total=500 processed=140 failed=5 skipped=5 bytes_processed=1073741824 speed_mbps=10.24 elapsed=1m40s eta=4m10s percentage=30.0%
 ```
 
