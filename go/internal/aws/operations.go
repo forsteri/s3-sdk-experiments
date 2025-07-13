@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -65,7 +64,7 @@ func (cm *ClientManager) UploadFileWithMetadata(ctx context.Context, bucket, key
 	}
 
 	// メタデータが指定されている場合
-	if metadata != nil && len(metadata) > 0 {
+	if len(metadata) > 0 {
 		putInput.Metadata = metadata
 	}
 
@@ -134,22 +133,22 @@ func (cm *ClientManager) ObjectExists(ctx context.Context, bucket, key string) (
 
 	// 403 Forbiddenの場合は、ListObjectsで確認を試みる
 	cm.logger.Debug("HeadObject failed with permission error, trying ListObjects", "error", err)
-	
+
 	// キーの親ディレクトリを取得
 	prefix := key
-	
+
 	// ListObjectsで確認
 	result, listErr := cm.s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket:  aws.String(bucket),
 		Prefix:  aws.String(prefix),
 		MaxKeys: aws.Int32(1),
 	})
-	
+
 	if listErr != nil {
 		// ListObjectsも失敗した場合は元のエラーを返す
 		return false, fmt.Errorf("failed to check object existence: %w", err)
 	}
-	
+
 	// 結果を確認
 	for _, obj := range result.Contents {
 		if obj.Key != nil && *obj.Key == key {
@@ -157,26 +156,8 @@ func (cm *ClientManager) ObjectExists(ctx context.Context, bucket, key string) (
 			return true, nil
 		}
 	}
-	
+
 	return false, nil
-}
-
-// UploadReader io.ReaderからS3にアップロード（内部使用）
-func (cm *ClientManager) uploadReader(ctx context.Context, bucket, key string, reader io.Reader, size int64, contentType string, metadata map[string]string) error {
-	input := &s3.PutObjectInput{
-		Bucket:        aws.String(bucket),
-		Key:           aws.String(key),
-		Body:          reader,
-		ContentLength: aws.Int64(size),
-		ContentType:   aws.String(contentType),
-	}
-
-	if metadata != nil && len(metadata) > 0 {
-		input.Metadata = metadata
-	}
-
-	_, err := cm.s3Client.PutObject(ctx, input)
-	return err
 }
 
 // guessContentType ファイル拡張子からContent-Typeを推測

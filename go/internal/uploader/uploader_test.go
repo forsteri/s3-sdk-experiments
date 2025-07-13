@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"s3-uploader/internal/models"
 )
 
@@ -32,12 +34,27 @@ func (m *MockS3Operations) UploadFileWithMetadata(ctx context.Context, bucket, k
 	return m.UploadFile(ctx, bucket, key, filePath)
 }
 
-func (m *MockS3Operations) ListObjects(ctx context.Context, bucket, prefix string) ([]string, error) {
-	var keys []string
-	for k := range m.Files {
-		keys = append(keys, k)
+func (m *MockS3Operations) ListObjects(ctx context.Context, bucket, prefix string) ([]types.Object, error) {
+	var objects []types.Object
+	now := time.Now()
+	
+	for k, v := range m.Files {
+		// prefixフィルタリング
+		if prefix != "" && len(k) < len(prefix) {
+			continue
+		}
+		if prefix != "" && k[:len(prefix)] != prefix {
+			continue
+		}
+		
+		size := int64(len(v))
+		objects = append(objects, types.Object{
+			Key:          &k,
+			Size:         &size,
+			LastModified: &now,
+		})
 	}
-	return keys, nil
+	return objects, nil
 }
 
 func (m *MockS3Operations) ObjectExists(ctx context.Context, bucket, key string) (bool, error) {
