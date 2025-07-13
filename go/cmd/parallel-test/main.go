@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"time"
 
@@ -128,7 +129,7 @@ func runBenchmark(ctx context.Context, clientManager aws.S3Operations, cfg *mode
 	fmt.Println("========================================")
 	fmt.Printf("📁 Source: %s\n", source)
 	fmt.Printf("🪣 Bucket: %s\n", bucket)
-	fmt.Println("========================================\n")
+	fmt.Println("========================================")
 
 	// 順次処理のテスト
 	cfg.Options.ParallelUploads = 1
@@ -194,7 +195,11 @@ func printResults(results []uploader.UploadResult, startTime time.Time) {
 	fmt.Printf("❌ Failed: %d\n", failedFiles)
 	fmt.Printf("⏭️  Skipped: %d\n", skippedFiles)
 	fmt.Printf("📦 Total Size: %s\n", formatBytes(totalBytes))
-	fmt.Printf("🚀 Throughput: %s/s\n", formatBytes(int64(float64(totalBytes)/duration.Seconds())))
+	if duration.Seconds() > 0 {
+		fmt.Printf("🚀 Throughput: %s/s\n", formatBytes(int64(float64(totalBytes)/duration.Seconds())))
+	} else {
+		fmt.Printf("🚀 Throughput: N/A (処理時間が短すぎます)\n")
+	}
 
 	// 失敗したファイルの詳細
 	if failedFiles > 0 {
@@ -227,10 +232,14 @@ func printBenchmarkResult(mode string, results []uploader.UploadResult, duration
 		}
 	}
 
-	throughput := float64(totalBytes) / duration.Seconds()
-	filesPerSecond := float64(successFiles) / duration.Seconds()
-
 	fmt.Printf("✅ %s completed in %s\n", mode, duration.Round(time.Millisecond))
+
+	// 最小値を1ミリ秒として計算（ゼロ除算を防ぐ）
+	seconds := math.Max(duration.Seconds(), 0.001)
+
+	throughput := float64(totalBytes) / seconds
+	filesPerSecond := float64(successFiles) / seconds
+
 	fmt.Printf("   Files: %d/%d (%.1f files/s)\n", successFiles, totalFiles, filesPerSecond)
 	fmt.Printf("   Data: %s (%.1f MB/s)\n", formatBytes(totalBytes), throughput/1024/1024)
 }
