@@ -3,7 +3,7 @@
     "region": "ap-northeast-1",
     "profile": null,
     "assume_role": {
-      "role_arn": "arn:aws:iam::891376985958:role/dataplatform-poc-testServer-role",
+      "role_arn": "arn:aws:iam::992382419692:role/dataplatform-poc-testServer-role",
       "session_name": "s3-uploader-session",
       "external_id": "s3-uploader-external-id",
       "duration_seconds": 3600
@@ -14,7 +14,7 @@
       "name": "sample_data",
       "description": "サンプルデータの定期アップロード",
       "source": "../test-data/sample_data.csv",
-      "bucket": "datalake-poc-raw-891376985958",
+      "bucket": "s3-experiment-bucket-250615",
       "s3_key": "daily-uploads/sample_data.csv",
       "enabled": true
     },
@@ -22,7 +22,7 @@
       "name": "data_directory",
       "description": "データディレクトリ全体のアップロード",
       "source": "../test-data/exports/",
-      "bucket": "datalake-poc-raw-891376985958",
+      "bucket": "s3-experiment-bucket-250615",
       "s3_key_prefix": "exports/",
       "recursive": true,
       "enabled": true

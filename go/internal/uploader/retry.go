@@ -82,6 +82,31 @@ func (u *Uploader) UploadFileWithRetry(ctx context.Context, filePath string, buc
 
 // UploadDirectoryWithRetry リトライ機能付きでディレクトリをアップロード
 func (u *Uploader) UploadDirectoryWithRetry(ctx context.Context, dirPath string, bucket string, keyPrefix string, recursive bool) ([]UploadResult, error) {
+	// 並列アップロードが有効かつファイル数が多い場合は並列処理を使用
+	if u.uploadConfig.ParallelUploads > 1 {
+		// まずファイル数を確認
+		files, err := u.scanner.ScanDirectory(dirPath, recursive)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan directory: %w", err)
+		}
+		
+		// ファイル数が並列処理の閾値を超えている場合は並列処理を使用
+		if len(files) > u.uploadConfig.ParallelUploads {
+			u.logger.Info("Using parallel upload with retry for directory",
+				"path", dirPath,
+				"files", len(files),
+				"workers", u.uploadConfig.ParallelUploads,
+			)
+			return u.UploadDirectoryParallel(ctx, dirPath, bucket, keyPrefix, recursive)
+		}
+	}
+	
+	// ファイル数が少ない場合は通常の順次処理
+	return u.uploadDirectorySequentialWithRetry(ctx, dirPath, bucket, keyPrefix, recursive)
+}
+
+// uploadDirectorySequentialWithRetry 順次処理でディレクトリをアップロード（既存の処理）
+func (u *Uploader) uploadDirectorySequentialWithRetry(ctx context.Context, dirPath string, bucket string, keyPrefix string, recursive bool) ([]UploadResult, error) {
 	// ディレクトリをスキャン
 	files, err := u.scanner.ScanDirectory(dirPath, recursive)
 	if err != nil {
