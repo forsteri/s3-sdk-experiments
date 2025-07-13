@@ -74,6 +74,8 @@ func (cm *ClientManager) initializeClient() error {
 		// リトライ設定をカスタマイズ
 		o.RetryMaxAttempts = 5
 		o.RetryMode = aws.RetryModeAdaptive
+		// リージョンの自動リダイレクトを有効にする
+		o.UsePathStyle = false
 	})
 	
 	cm.logger.Info("S3 client initialized successfully")
@@ -171,5 +173,45 @@ func (cm *ClientManager) TestConnection(ctx context.Context, bucket string) erro
 	
 	cm.logger.Info("S3 connection test successful", "bucket", bucket)
 	return nil
+}
+
+// GetBucketRegion バケットのリージョンを取得
+func (cm *ClientManager) GetBucketRegion(ctx context.Context, bucket string) (string, error) {
+	// まず現在のクライアントで試す
+	location, err := cm.s3Client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+		Bucket: aws.String(bucket),
+	})
+	
+	if err == nil {
+		// LocationConstraintが空の場合はus-east-1
+		if location.LocationConstraint == "" {
+			return "us-east-1", nil
+		}
+		return string(location.LocationConstraint), nil
+	}
+	
+	// 301エラーの場合、エラーメッセージからエンドポイントを取得
+	cm.logger.Debug("Failed to get bucket location, trying to parse error", "error", err)
+	
+	// us-east-1で再試行
+	tempCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp config: %w", err)
+	}
+	
+	tempClient := s3.NewFromConfig(tempCfg)
+	location, err = tempClient.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+		Bucket: aws.String(bucket),
+	})
+	
+	if err != nil {
+		return "", fmt.Errorf("failed to get bucket region: %w", err)
+	}
+	
+	if location.LocationConstraint == "" {
+		return "us-east-1", nil
+	}
+	
+	return string(location.LocationConstraint), nil
 }
 
