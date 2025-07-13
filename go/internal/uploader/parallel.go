@@ -73,18 +73,18 @@ func (pu *ParallelUploader) Stop() {
 		pu.logger.Debug("Parallel uploader already stopped")
 		return
 	}
-	
+
 	pu.logger.Info("Stopping parallel uploader")
-	
+
 	// ジョブキューをクローズ
 	close(pu.jobQueue)
-	
+
 	// すべてのワーカーが終了するのを待つ
 	pu.wg.Wait()
-	
+
 	// 結果キューをクローズ
 	close(pu.resultQueue)
-	
+
 	// コンテキストをキャンセル
 	pu.cancel()
 }
@@ -92,7 +92,7 @@ func (pu *ParallelUploader) Stop() {
 // worker アップロードワーカー
 func (pu *ParallelUploader) worker(id int) {
 	defer pu.wg.Done()
-	
+
 	pu.logger.Debug("Worker started", "worker_id", id)
 
 	for job := range pu.jobQueue {
@@ -113,7 +113,7 @@ func (pu *ParallelUploader) worker(id int) {
 
 		startTime := time.Now()
 		result, err := pu.uploader.UploadFileWithRetry(pu.ctx, job.FilePath, job.Bucket, job.Key)
-		
+
 		if err != nil {
 			pu.logger.Error("Worker upload failed",
 				"worker_id", id,
@@ -125,7 +125,7 @@ func (pu *ParallelUploader) worker(id int) {
 		} else if result.Success && result.SkippedReason == "" {
 			pu.uploadedCount.Add(1)
 			pu.totalBytes.Add(result.Size)
-			
+
 			pu.logger.Debug("Worker upload completed",
 				"worker_id", id,
 				"job_id", job.JobID,
@@ -142,7 +142,7 @@ func (pu *ParallelUploader) worker(id int) {
 			return
 		}
 	}
-	
+
 	pu.logger.Debug("Worker finished", "worker_id", id)
 }
 
@@ -152,7 +152,7 @@ func (pu *ParallelUploader) SubmitJob(job UploadJob) error {
 	case pu.jobQueue <- job:
 		return nil
 	case <-pu.ctx.Done():
-		return fmt.Errorf("parallel uploader is stopped")
+		return fmt.Errorf("parallel uploader is stopped: context cancelled")
 	}
 }
 
@@ -188,7 +188,7 @@ func (u *Uploader) UploadDirectoryParallel(ctx context.Context, dirPath string, 
 	// 結果を収集するゴルーチン
 	results := make([]UploadResult, 0, len(files))
 	resultChan := make(chan []UploadResult)
-	
+
 	go func() {
 		var collectedResults []UploadResult
 		for result := range parallelUploader.GetResults() {
@@ -201,14 +201,14 @@ func (u *Uploader) UploadDirectoryParallel(ctx context.Context, dirPath string, 
 	for i, fileInfo := range files {
 		// S3キーを生成
 		key := generateS3Key(keyPrefix, fileInfo.RelativePath)
-		
+
 		job := UploadJob{
 			FilePath: fileInfo.Path,
 			Bucket:   bucket,
 			Key:      key,
 			JobID:    i,
 		}
-		
+
 		if err := parallelUploader.SubmitJob(job); err != nil {
 			u.logger.Error("Failed to submit job", "error", err)
 			break
@@ -217,7 +217,7 @@ func (u *Uploader) UploadDirectoryParallel(ctx context.Context, dirPath string, 
 
 	// すべてのジョブが完了するのを待つ
 	parallelUploader.Stop()
-	
+
 	// 結果を取得
 	results = <-resultChan
 
@@ -251,7 +251,7 @@ func (u *Uploader) UploadFilesParallel(ctx context.Context, uploadJobs []UploadJ
 	// 結果を収集するゴルーチン
 	results := make([]UploadResult, 0, len(uploadJobs))
 	resultChan := make(chan []UploadResult)
-	
+
 	go func() {
 		var collectedResults []UploadResult
 		for result := range parallelUploader.GetResults() {
@@ -270,7 +270,7 @@ func (u *Uploader) UploadFilesParallel(ctx context.Context, uploadJobs []UploadJ
 
 	// すべてのジョブが完了するのを待つ
 	parallelUploader.Stop()
-	
+
 	// 結果を取得
 	results = <-resultChan
 

@@ -195,11 +195,10 @@ func printResults(results []uploader.UploadResult, startTime time.Time) {
 	fmt.Printf("❌ Failed: %d\n", failedFiles)
 	fmt.Printf("⏭️  Skipped: %d\n", skippedFiles)
 	fmt.Printf("📦 Total Size: %s\n", formatBytes(totalBytes))
-	if duration.Seconds() > 0 {
-		fmt.Printf("🚀 Throughput: %s/s\n", formatBytes(int64(float64(totalBytes)/duration.Seconds())))
-	} else {
-		fmt.Printf("🚀 Throughput: N/A (処理時間が短すぎます)\n")
-	}
+	// 最小値を1ミリ秒として計算（ゼロ除算を防ぐ）
+	seconds := math.Max(duration.Seconds(), 0.001)
+	throughput := float64(totalBytes) / seconds
+	fmt.Printf("🚀 Throughput: %s/s\n", formatBytes(int64(throughput)))
 
 	// 失敗したファイルの詳細
 	if failedFiles > 0 {
