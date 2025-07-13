@@ -120,7 +120,10 @@ func (pt *ProgressTracker) GetStats() Stats {
 	processedBytes := pt.processedBytes.Load()
 	
 	elapsed := time.Since(pt.startTime)
-	speed := float64(processedBytes) / elapsed.Seconds()
+	var speed float64
+	if elapsed.Seconds() > 0 {
+		speed = float64(processedBytes) / elapsed.Seconds()
+	}
 	
 	// 残り時間の推定
 	completed := processed + failed + skipped
