@@ -4,6 +4,7 @@ node_modules/
 target/
 *.pyc
 __pycache__/
+bin/
 
 # Go specific
 *.exe
